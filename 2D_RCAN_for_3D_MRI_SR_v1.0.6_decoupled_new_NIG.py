@@ -6,192 +6,13 @@
 This is the code for Dual Domain Fusion Network for MRI SR Reconstruction.
 """
 """
-Author: chisyliu@hotmail.com *
-        haoli_mri@hotmail.com *
+Author: haoli_mri@hotmail.com *
+		chisyliu@hotmail.com *
         
         * Both authors contribute equally
-Version: 1.0.4(Stable Version, even deformable conv works at least for RCAN network)
+Version: 1.0.6(Stable Version)
 """
 "-------------------------------------------------------------------------------------------------"
-"""
-This is the current version we are working on, in 20210206
-This is a demo code of 2D_MRI_SR_Dual_Domain. in this version we have already support following items:
-    0)  Dual Domain Fusion Network Achitecture, where we already support:
-        a) use RCAN or U-Net as main framework, for image single branch network.
-        b) gradient map branch as secondary branch, together with main(image) branch, in the framework of RCAN
-        b) k space branch as secondary branch, together with main(image) branch, in the framework of RCAN
-        c) high frequency component extracted using wavelet transformation and wavelet branch as 
-            secondary branch, together with main(image) branch, in the framework of RCAN
-        d) interleaving fusion between image branch and  as secondary branch at intermedian level
-        e) late stage fusion of outcome from image branch and outcome from secondary branchbranch
-    Besides, we already support other features:
-    1)  option to add a VGG feature extractor in front of the main "CNN based Reconstruct network"(so the input to "CNN based Reconstruct network" is feature map of LR image)
-    2)  either Pixel-Wise MSE loss or Pixel-Wise smooth L1 loss (L1_Charbonnier_Loss is also availbe). 
-    3)  weighted k space loss(fft loss)
-    4)  weighted VGG loss
-    5)  L2 Regularization
-    6)  option to add ssim smooth L1 loss
-    7)  option to add gradient map smoothL1 loss
-    8） option to add gram matrix smoothL1 loss(for increasing texture similarity between SR and HR)
-	9)  option to use lookahead optimizer
-    10) option to use CosineAnnealingLR learning rate decay. See https://blog.zhujian.life/posts/6eb7f24f.html for more info 
-    11) option to choose different gradient_operator
-    12) option to use coord_conv(See [20])
-    13) option to use deformable_conv(However we are running in CUDA out of memory, although already used tc.cuda.empty_cache() for deformable_conv)
-    14) option to use py_conv(See [24])
-    15) option to use Sine(SIREN) activation function
-    16) option to use FReLU activation function
-    17) option to use channel attention for cross branch fusion
-    18) option to use "1 - exp(-alpha*gradient_map)" to amplify small values in gradient map to emphasize the information from 
-        gradient values which stand for texture
-    19) option to amplify high frequency loss value in k space loss. We can use weight for "square of difference between one element of SR k space data matrix and corresponding element
-        of HR k space data matrix" which follows the 2D Gaussian distribution. Cause the center part of k space data matrix
-        stands for high frequency part where we observed the most significant mismatch happened between SR and HR k space 
-        data, we expect to give higher weight on center part of difference and lower weight on edge part of difference in the
-        k space data matrix for the k space loss.
-    20) option to use "warm up learning rate" to set up the relative small learning rate in the beginning of training, then change to normal scheduler
-        to apply the large learning rate and lower the learning rate graduately. We could avoid using large learning rate in the very beginning by doing
-        such, thus avoid "unstable" training(e.g. The loss becomes very large suddenly in the first several epoch).
-        Warm up指的是用一个小的学习率先训练几个epoch，这是因为网络的参数是随机初始化的，假如一开始就采用较大的学习率容易出现数值不稳定，这也是为什么要使用Warm up。
-        然后等到训练过程基本上稳定了就可以使用原始的初始学习率进行训练了。
-    21) Re-implement deformable conv filter(search ConvOffset2D), to make it runnable now without memory problem. Only tested with RCAN network, defaul conv, ReLU.
-    22) option to use Dynamic ReLU Type A and Type B activation function.
-    23) option to set up args['number_of_progressive_stage'] as 1, 2, 3, to support args['scale']^args['number_of_progressive_stage'] progressive 4x and 8x upsampling reconstruction.
-    24) option to use "normal end to end channel and spatial attention block"(CAM and SAM are implemented for channel and spatial attention, see paper:2018.CBAM: Convolutional Block Attention Module
-        for more detail information.) for upsampler (inside upsampler, after first conv and before pixel shuffle).
-    25) option to use "self-attention based end to end channel and spatial attention block"(The non-local self-attention based channel attention and non-local self-attention are implemented according 
-        to paper: 2018.Dual Attention Network for Scene Segmentation) for upsampler. The non-local self-attention spatial and channel attention mechanism employed in DANet is, the Self-Attention(Also 
-        called as Non-Local Attention, see paper: 2018.Non-local Neural Networks and paper: 2019.Self-Attention Generative Adversarial Networks for more details about Self-Attention) which borrows from 
-        the self-attention mechanism in the classical paper in NLP which proposes the Transformer technology: 2017.Attention is All You Needed.
-    26) option to use "normal end to end channel and spatial attention block"(CAM and SAM in CBAM framework) and "self-attention based end to end channel and spatial attention block"(self_attention framework)
-        as basic block in every RCAB(for both main branch and second branch if dual branch network is turned), to replace the CALayer.
-    27) For all the "normal end to end channel and spatial attention block" and "self-attention based end to end channel and spatial attention block", either "sequential_mode" or "parallel_mode" could be selected.
-28) option to use "negative total variation loss(tv_loss)". minimize总变差（TV）loss促进了生成的图像中的空间平滑性,于是minimize negative tv loss防止过度平滑
-    29) option to use "negative trace loss". 用minimize 1/trace(SR*HR)做为negative trace loss。trace(SR*HR)表示SR和HR的相似程度。两个向量内积是把一个向量投影到另一个上的长度，这个值可以用于描述两个向量的相似性。两个矩阵A、B的相似性
-        可以用A、B两个矩阵的内积表征，被定义为Trace(AB)。见paper: 2015.LRTV: MR Image Super-Resolution With Low-Rank and Total Variation Regularizations
-30) option to use HR reference with self-attention in the end. 使用MRI HR reference的MRI SR网络并联两个现有的branch，一个branch用于LR的放大，另一个用于给HR reference的feature extraction（去掉upsampler），
-        最后用一个self-attention的upsampler来把俩者fuse到一起生成MRI SR。这个方案的思路是用CNN去抓取LR图像和HR图像的局部特征的feature，然后用self-attention方案去找到这些局部feature在整个图上（全局上，更大的范围）的关系。
-        模型的结构可以参考Paper: 2020.Attention-based Image Upsampling. https://arxiv.org/abs/2012.09904
-    31) option to add long skip connection outside the entire network model to only reconstruct the residual part of HR MRI image.从而让网络从用LR生成SR变为用LR恢复SR和LR+bicubic padding相差的部分。
-    32) option to use Gradient map guided pixel-wise loss. SR和HR分别求gradient map，再相减得到一个gradient map差的矩阵，再把这个gradient map差的矩阵从(H * W)变为(1 * HW)，然后再过一个softmax，再变回H * W，然后把得到的矩
-        阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-    33) option to use SSIM map guided pixel-wise loss. SR和HR求SSIM map，再用1减这个SSIM map得到一个矩阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-
-
-Some feature or bug fixing which have already been planed/started but still not finished yet:
-    1) U-Net is already used as framework for image single branch. But not support for any of dual domain branch yet! Thus the class "U_Net_Based_MRI_SR_Dual_Domain_2D" still needs to be
-        changed to support U-Net as framework for 3 types of dual domain branch.
-    2) k space, wavelet secondary branch多个分量间分开，各走一个branch来实现。
-    3) option to use HR reference with self-attention in the end这个方案已经代码已经完成。但现在只支持RCAN的image_single_domain或者gradient_map_dual_domain在没有long_skip_connection_to_reconstruct_residual_part_only时的
-        HR reference based network。不支持其他配置时的HR reference based network。注意：现在gradient_map_dual_domain时用HR reference based network还有问题，会out of memory。
-    4) 另外，现在option to use HR reference with self-attention in the end这个方案如果在网络用self-attention，则会out of memory。
-    5) option to add long skip connection outside the entire network model to only reconstruct the residual part of HR MRI image这个选项现阶段仅支持非HR Reference based的网络结构。
-
-
-we will plan to support other features:
-    1) multi-kernel size deformable conv in different paths and fuse together, see [26] for similar idea
-    2) kernel size wise attention[25] for multi-kernel size deformable conv
-    3) multi-kernel size dilated conv in different paths and fuse together[26]
-    4) kernel size wise attention[25] for multi-kernel size dilated conv
-    5) feature scale wise attention for py_conv
-    6) set threshold_low and threshold_high for "contrast between each pixel and all the pixels around it", if contrast is
-        lower than threshold_high, we have to limit the contrast to let it should be larger than threshold_low. The actual
-        threshold_low for contrast between each pixel and all the pixels around it may follow Gaussian distribution(The 
-        closer the pixels are the larger threshold_low should be, doing like this lead the contrast between two pixels which
-        are close to each other large enough, so they will NOT be samiliar and the super resolution result will NOT be too
-        smooth in texture wise.)
-    7) 完成基于He Kaiming的paper: 2019.Panoptic Feature Pyramid Networks内figure 3提出的为semantic segmentation任务提出的Panoptic FPN方案来增强U-Net framework对于多尺度信息的提取恢复。
-        现阶段已经用"Channel and Spatial Attention Block"模块替换掉了CA Lyaer从而组成新的RCSAB，然后多个RCSAB构成新的RG，每个RG作为U-Net framework中的encoder的每一层。基于这种U-Net 
-        framework我们可以在decoder的所有层连上这种Panoptic FPN结构从而构成Panoptic U-Net framework.
-    8) non-local edge attention. 受paper: 2019.Local Relation Networks for Image Recognition中figure2的启发，那个图它引入了一个什么geometry prior，然后说要对each spatial position来做self-attention。
-        我们可以像它这样，但不对每一个spatial position来做，而是做self-attention的部分引入一个LR的图的Gradient map, 然后将这个gradient map reshape成为一个1 x NW的向量，再和自己的转置相乘得到一个
-        pixel-wise的互相关矩阵，再通过一个softmax或sigmoid（和self-attention的通过Pixel-wise互相关矩阵求取每个pixel和其他所有pixel之间的相关性再通过softmax的操作逻辑一样）变成一个归一化了的权重矩阵。
-        再将这个基于Gradient map求出来的权重矩阵乘以self-attention模块中的Value矩阵，然后再和“key和query求Pixel-wise的互相关矩阵过softmax之后得到的权重矩阵”再相乘，从而输出一个同时被non-local 
-        self-attention强调和gradient map edge强调过的feature map。那这个non-local edge attention模块同时放在整个网络的最前面（做第一个block）给LR输入加一个edge attention的guidence，和最后面（做最
-        后一个block）给SR输出加一个edge attention的guidence。
-        **Beware: 这个idea应该对MRI segmentation一样靠谱！！！！！
-    9) 那么对于8)中提出的基于HR reference的MRI SR网络，其实也可以对输入的HR reference MRI数据在网络的一开始做non-local edge attention，以及fft求k space去掉低频仅保留高频再ifft之后做non-local edge attention
-        类似的操作求出一个high frequency self-attention，这样得到一个被gradient map edge强调和的high frequency self-attention强调的feature map来和LR生成SR的branch进行fuse。
-    10) consider adding dual regression loss(See paper: 2020.Closed-loop Matters: Dual Regression Networks for Single Image Super-Resolution).
-    11) Pair-wise and Patch-wise Attention. See paper: 2019.Exploring self-attention for image recognition
-    12) Criss-cross Attention. Criss-cross Attention could reduce the computational burden which introduces from non-local self-attention block(has a high complexity of O(N2), where N denotes 
-        the number of input feature maps). The criss-cross attention module that for each pixel position generates a sparse attention map only on the criss-cross path. Further, by applying 
-        criss-cross attention recurrently, each pixel position can capture context from all other pixels. Compared to non-local self-attention block, the criss-cross uses 11× lesser GPU memory, 
-        and has a complexity of O(2√N).
-        See paper: 2019.CCNet: Criss-cross attention for semantic segmentation
-    13) 看懂PC（Phase Congruency）怎么算，把这个指标做loss项。 参考论文：2011.FSIM: A Feature Similarity Index for Image Quality Assessment 参考代码：https://github.com/sunxirui310/FSIM-FSIMc-matlab/blob/master/FSIM.m
-    14) 受paper: 2019.Local Relation Networks for Image Recognition中figure2的启发，那个图它引入了一个什么geometry prior，然后说要对each spatial position来做self-attention。我们可以像它这样，但不对每一个spatial position来做，
-        而是在option to use HR reference with self-attention in the end方案实现using HR reference with self-attention in the end那样最后做self-attention的部分引入一个比如LR的图的Gradient map像它这个geometry prior一样加到self-attention里面。
-    15) 我们的HR reference based网络也应该让它经过小波变换，然后只保留高频部分进入网络帮助LR做SR。无论对于自己的HR reference网络还是TTSR都可以这样做下,对于TTSR则可以直接对HR Reference
-        做小波变换保留3个高频分量放在3个channel上面进入LTE。对于我们自己的HR reference网络则可以考虑把LR复制3份，分别于HR reference的小波变换的3个高频分量各自过self-attention
-        一起组成multi-head self-attention。
-
-
-We also fixed bugs from previous versions, typical ones like:
-    1) After PyTorch version 1.1, call scheduler.step() will overwrite the learning rate used in optimizer to be same as scheduler sets up immediately.
-    2) Also beware the scheduler.step() should be called every epoch rather than every batch. It means scheduler.step() should
-        only be after and outside of "for loop of batch".
-    3) Previsouly the neural network has been initialized automatically by PyTorch framework, although such initialization has not been explicitly shown. 
-        So we add xavier and Kaiming initialization explicitly in this version of code.(but might not be really used since it is NOT common to use weight 
-        initialization for super resolution task).
-    4) Add the code to always select the weights of network which provides the best value in average SSIM over all batches for validation
-        in one epoch, and save the selected weights of network and corresponding LR and SR data.
-    5) When accumulate the loss in the training step, only add the value of loss into by using loss_bullet.item(), e.g. ssim_loss_training += ssim_loss.item(), rather than adding the entire
-        computational graph into(e.g. ssim_loss_training += ssim_loss). Thus avoid using too much GPU memory which is not necessary.
-    6) Replace the mean SSIM (a single value) by using SSIM map (a matrix) in the ssim loss.
-    7) Fix "wrongly reuse the same conv for different branch" bugs in GradientMapDualResidualGroup, RCAN_Based_MRI_SR_Dual_Domain_2D, Progressive_Learning_Wrapper_MRI_SR_Dual_Domain_2D.
-    
-    In this 2D version, the data format has been changed. The input data is just 64 x 64 2D matrix rather than 64 x 64 x 64, we already 
-    collapse all the 64 layers into only one layer in the data tailing and noise filtering processing.
-"""
-"-------------------------------------------------------------------------------------------------"
-"""Reference: 
-    [1] 2015 Deep Residual Learning for Image Recognition. download here: https://arxiv.org/pdf/1512.03385.pdf"
-        tutorial online: https://icml.cc/2016/tutorials/icml2016_tutorial_deep_residual_networks_kaiminghe.pdf
-    [4] 2017 Improving Generalization Performance by Switching from Adam to SGD. https://arxiv.org/pdf/1712.07628.pdf
-    [5] 2016 Residual Networks Behave Like Ensembles of Relatively Shallow Networks. 
-        https://papers.nips.cc/paper/6556-residual-networks-behave-like-ensembles-of-relatively-shallow-networks.pdf
-        https://zhuanlan.zhihu.com/p/37820282
-    [6] 2014 Dropout: A Simple Way to Prevent Neural Networks from Overfitting
-        http://jmlr.org/papers/volume15/srivastava14a/srivastava14a.pdf
-    [7] 2015 Batch normalization: Accelerating deep network training by reducing internal covariate shift
-        https://arxiv.org/pdf/1502.03167.pdf
-    [8] 2016 Aggregated Residual Transformations for Deep Neural Networks
-        https://arxiv.org/pdf/1611.05431.pdf
-    [9] Memory-Efficient Implementation of DenseNets
-        https://arxiv.org/pdf/1707.06990.pdf
-    [10]2016 Densely Connected Convolutional Networks. https://arxiv.org/pdf/1608.06993.pdf
-        source code: https://github.com/chisyliu/DenseNet
-    [12]2016 SGDR: Stochastic Gradient Descent with Warm Restarts. https://arxiv.org/abs/1608.03983
-    [13]2016 Identity Mappings in Deep Residual Networks. https://arxiv.org/abs/1603.05027
-    [16]2017 Multi-scale brain MRI super-resolution using deep 3D convolutional networks. 
-    [17]2018 Brain MRI super resolution using 3D deep densely connected neural networks.
-    [19]2018.Image Super-Resolution Using Very Deep Residual Channel Attention Networks. https://arxiv.org/abs/1807.02758
-    [20]2018.An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution. https://arxiv.org/abs/1807.03247
-    [21]2020.Implicit Neural Representations with Periodic Activation Functions. https://arxiv.org/abs/2006.09661
-    [22]2020.Funnel Activation for Visual Recognition. https://arxiv.org/abs/2007.11824
-    [23]2017.Deformable Convolutional Networks. https://arxiv.org/abs/1703.06211
-    [24]2020.Pyramidal Convolution: Rethinking Convolutional Neural Networks for Visual Recognition. https://arxiv.org/abs/2006.11538
-    [25]2019.Selective Kernel Networks
-    [26]2020.Perceptual Extreme Super Resolution Network with Receptive Field Block
-"""
-"""
-Note:
-    a) A possible error about "Broken pips" and "multi-processing" can be happened, see this blog
-    https://medium.com/@mackie__m/running-a-cifar-10-image-classifier-on-windows-with-pytorch-9094e29089cd and this
-    https://discuss.pytorch.org/t/brokenpipeerror-errno-32-broken-pipe-when-i-run-cifar10-tutorial-py/6224 how to solve it
-    b) Error 'Can't pickle <class>: it's not the same object, see this blog 
-    https://stackoverflow.com/questions/1412787/picklingerror-cant-pickle-class-decimal-decimal-its-not-the-same-object
-    how to solve it
-    c) in a function that expects a list of items, how can I pass a Python list item iteratively without getting an error? e.g. 
-    my_list = ['red', 'blue', 'orange']
-    function_that_needs_strings('red', 'blue', 'orange') # works!
-    function_that_needs_strings(my_list) # error!
-    answer: function_that_needs_strings(*my_list) # works!
-    see more information: https://stackoverflow.com/questions/3480184/unpack-a-list-in-python
-    d) After PyTorch version 1.1, call scheduler.step() will overwrite the learning rate used in optimizer to be same as scheduler sets up immediately.
-    
-"""
 
 import torch as tc
 import torch.nn as nn
@@ -200,14 +21,12 @@ import torch.optim as opt
 from torch.autograd import Variable
 import torchvision as tv
 import torchvision.transforms as transforms
-# from torchvision.transforms import ToPILImage
 import matplotlib.pyplot as plt
 from math import exp
 import numpy as np
 import h5py
 import math
 import os
-import time
 import scipy.io
 from pytorch_wavelets import DWT, IDWT # (or import DWTForward, DWTInverse)
 import copy
@@ -220,16 +39,11 @@ from optimizer import lookahead
 from ultility.deform_conv import th_batch_map_offsets, th_generate_grid # For supporting deformable conv filter
 
 "-------------------------------------------------------------------------------------------------"
-Single_GPU_training = True
-
-if Single_GPU_training == True:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 print('boolean value to see if GPU is ready:', tc.cuda.is_available())
 print('number of GPU is', tc.cuda.device_count())
 print(tc.cuda.get_device_name(0))
 use_cuda = True
-training_start = time.perf_counter()
 
 """""""""""""""""""""""""""""""""""""""""""""
 0. Configure all parameter
@@ -275,21 +89,20 @@ plot_the_wavelets_transform_data_of_input_image = False
 # --------------------------- configuration of parameters for RCAN --------------------------- #
 
 "The folder where to load the LR, HR data pair"
-folder_data_training = 'D:/Hao/SR_data/real/synthetic/2x2_folds_3d_downsize_sag_128x3/training/'
+folder_data_training = 'training/'
 file_names_training = os.listdir(folder_data_training)
 
-folder_data_validation = 'D:/Hao/SR_data/real/synthetic/2x2_folds_3d_downsize_sag_128x3/validation/'
+folder_data_validation = 'validation/'
 file_names_validation = os.listdir(folder_data_validation)
 
-folder_data_evaluation = 'D:/Hao/SR_data/real/synthetic/2x2_folds_3d_downsize_sag_128x3/evaluation/'
+folder_data_evaluation = 'evaluation/'
 file_names_evaluation = os.listdir(folder_data_evaluation)
 
 "The folder for log and results"
-folder_log_path = 'D:/Hao/results/20211220_RCAN_5x5_128x3_2x2folds_3d_downsize_char_ssim_seed1_cosine_real_synthetic/'
-# folder_log_path = 'D:/Hao/results/inference_test/'
+folder_log_path = 'Results/'
 
 "The folder of saved network parameters"
-folder_saved_network = 'D:/Hao/results/044/20210720_RCAN_5x5_128x3_2x2folds_3d_downsize_Char_SSIM_seed1_cosine_101_044/'
+folder_saved_network = 'Results/'
 
 
 args = {'use_HR_reference' : False, 
@@ -338,37 +151,6 @@ if Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Gaussia
 if Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Gaussian_Pdf_Likelihood_Loss == False and Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Laplacian_Likelihood_Loss == False and args['number_of_progressive_stage']>1 and args['type_of_network'] != 'image_single_domain':
     args_loss_weight['decoupled_uncertainty_network'] = False
     
-# args['use_HR_reference'] = True, stands for whether we select to use HR reference for MRI SR, e.g. True, False
-# args['use_channel_and_spatial_attention_inside_RCAB_for_HR_reference_fuser'] = True, stands for whether we select to use attention when fusing the feature maps from HR reference and LR MRI image in the last stage, e.g. True, False
-# args['channel_and_spatial_attention_framework_for_HR_reference_fuser'] = 'self_attention', stands for which channel and spatial framework is used when fusing the feature maps from HR reference and LR MRI image in the last stage, e.g. 'CBAM', 'self_attention'
-# args['channel_and_spatial_attention_mode_for_HR_reference_fuser'] = 'parallel_mode', stands for which end to end channel and spatial block to use when fusing the feature maps from HR reference and LR MRI image in the last stage, e.g. 'sequential_mode', 'parallel_mode'
-
-# args['main_network_framework'] = 'RCAN', stands for which main network framework to use, e.g. 'U_Net', 'RCAN'
-# args['type_of_network'] == 'image_single_domain', stands for type of network, e.g. 'image_single_domain', 'gradient_map_dual_domain', 'k_space_dual_domain', 'wavelets_transform_dual_domain'
-# args['long_skip_connection_to_reconstruct_residual_part_only'] == False, stands for whether we add long skip connection outside the entire network model to only reconstruct the residual part of HR MRI image, e.g. True, False
-
-# args['use_channel_and_spatial_attention_inside_upsampler'] = True, stands for whether we use channel and spatial attention block inside upsampler, e.g. True, False
-# args['use_channel_and_spatial_attention_inside_RCAB'] = True, stands for whether we use channel and spatial attention block inside RCAB to replace CALayer, e.g. True, False
-# args['channel_and_spatial_attention_framework'] = 'self_attention', stands for which channel and spatial framework is used in the code, e.g. 'CBAM', 'self_attention'
-# args['channel_and_spatial_attention_mode'] = 'sequential_mode', stands for which end to end channel and spatial block to use, e.g. 'sequential_mode', 'parallel_mode'
-
-# args['in_colors'] = 1, stands for number of channels of input image, e.g. 1 for MRI image, 3 for RGB image or multi-slice MRI image.
-# args['out_colors'] = 1, stands for number of channels of output image.
-# args['n_resgroups'] = 20, stands for number of RGs in RIR/RCAN (per stage)
-# args['n_rcablocks'] = 10, stands for number of RCABs in one RG (per stage)
-# args['n_feats'] = 128, stands for how many "number of channels" for feature map going through model
-# args['reduction'] = 16, stands for reduction is the r mentioned in 3.3 Channel Attention in RCAN paper
-
-# args['scale'] = 2, stands for scale factor used in one upsampler, e.g. 2, 4
-# args['number_of_progressive_stage'] = 2, stands for number of stages(number of "MRI_SR_Dual_Domain_2D network"), e.g. 1, 2, 3, to ultilize progressive upsampling
-
-# args['conv_layer_type'] = 'default_conv', stands for type of conv layer, e.g. 'default_conv', 'coord_conv', 'deformable_conv', 'py_conv'
-# args['activation_function_type'] = 'ReLU', stands for type of activation function, e.g. 'ReLU'. 'Sine', 'FReLU', 'Dynamic_ReLU_Type_A', 'Dynamic_ReLU_Type_B'
-# arg['gradient_operator'] = ['sobel'] # stand for which gradient operator we want use for calculating gradient map, e.g. 'sobel', 'canny'
-
-# arg['optimizer'] = ['Adam'] # stand for which optimizer we want use for training, e.g. 'Adam', 'SGD_with_momentum', 'look_ahead'
-# arg['learning_rate_decay_method'] = ['cosine_learning_rate_decay'] # stand for which learning rate decay method we want use for training, e.g. 'cosine_learning_rate_decay', 'multi_step_learning_rate', 'step_learning_rate', 'cosine_learning_rate_warm_restarts'
-
 
 if Perform_training == True:
     if args['use_HR_reference'] == False:
@@ -406,10 +188,7 @@ if Perform_training == True:
                     print(num_low_resolution_mat_file)
                     torch_data_low_resolution_sequence = tc.cat((torch_data_low_resolution_sequence, torch_data_low_resolution), 0)
                 print('Training data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-    #        elif 'HRGT_training' in os.path.join(folder_data_training, idx_file):
-    #            print('One more high resolution groundtruth image set exist')
                 num_high_resolution_groundtruth_mat_file = num_high_resolution_groundtruth_mat_file + 1
-    #            print(os.path.join(folder_data_training, idx_file))
                 file_data_high_resolution_groundtruth = h5py.File(os.path.join(folder_data_training, idx_file), 'r')
                 data_high_resolution_groundtruth = file_data_high_resolution_groundtruth['HRGT'][:] #----- numpy array
                 print('Training data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
@@ -442,7 +221,6 @@ if Perform_training == True:
         torch_data_low_resolution_training_sequence = torch_data_low_resolution_sequence.float()
         torch_data_high_resolution_groundtruth_training_sequence = torch_data_high_resolution_groundtruth_sequence.float()
     
-        # tc.multiprocessing.freeze_support()
     
         trainset = tc.utils.data.TensorDataset(torch_data_low_resolution_training_sequence, torch_data_high_resolution_groundtruth_training_sequence)
     
@@ -454,13 +232,6 @@ if Perform_training == True:
                             pin_memory = False,
                             drop_last = True)
     
-        #testset = tc.utils.data.TensorDataset(torch_data_low_resolution_test_sequence, torch_data_high_resolution_groundtruth_test_sequence)
-    
-        #testloader = tc.utils.data.DataLoader(
-        #                    testset, 
-        #                    batch_size = batch_size,
-        #                    shuffle = True, 
-        #                    num_workers = 0)
     
         """""""""""""""""""""""""""""""""""""""""""""
         2.1.c. MRI HR and LR Validation Data pair preprocessing validation part
@@ -488,10 +259,7 @@ if Perform_training == True:
                     print(num_low_resolution_mat_file)
                     torch_data_low_resolution_sequence = tc.cat((torch_data_low_resolution_sequence, torch_data_low_resolution), 0)
                 print('Evaluation data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-    #        elif 'HRGT_validation' in os.path.join(folder_data_validation, idx_file):
-    #            print('One more high resolution groundtruth image set exist')
                 num_high_resolution_groundtruth_mat_file = num_high_resolution_groundtruth_mat_file + 1
-    #            print(os.path.join(folder_data_validation, idx_file))
                 file_data_high_resolution_groundtruth = h5py.File(os.path.join(folder_data_validation, idx_file), 'r')
                 data_high_resolution_groundtruth = file_data_high_resolution_groundtruth['HRGT'][:] #----- numpy array
                 print('Evaluation data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
@@ -540,13 +308,6 @@ if Perform_training == True:
 
  
 
-"""
-In the original paper which proposed RCAN(2018. Image Super-Resolution Using Very Deep Residual Channel Attention Networks, mentioned as "original RCAN paper" in following),
-The general, relationship between module and sub-module, sub-sub.module, etc, is something like:
-RCAN(Deep Residual Channel Attention Network) include "RIR(Residual in Residual module) + upsampling module"; RIR consists of several RG(Residual Group);
-each RG consists of several RCAB(Residual Channel Attention Block)s; each RCAB include CA(Channel Attention Layer).
-"""
-
 """""""""""""""""""""""""""""""""""""""
 3. Define RCAN architecture part
 """""""""""""""""""""""""""""""""""""""
@@ -577,20 +338,6 @@ def create_2d_Gaussian_weights(window_size, num_of_samples, channel):
     weights_in_2D_window_pytorch = weights_in_2D_window_pytorch/tc.max(weights_in_2D_window_pytorch)
     return weights_in_2D_window_pytorch
 
-
-"apply wavelets transform for any image and inverse wavelets transform"
-"""
-Note: 小波变换（wavelet transform，WT）是一种新的变换分析方法，它继承和发展了短时傅立叶变换局部化的思想，同时又克服了窗口大小不随频率变化等缺
-点，能够提供一个随频率改变的“时间-频率”窗口，是进行信号时频分析和处理的理想工具。它的主要特点是通过变换能够充分突出问题某些方面的特征，能对时
-间（空间）频率的局部化分析，通过伸缩平移运算对信号（函数)逐步进行多尺度细化，最终达到高频处时间细分，低频处频率细分，能自动适应时频信号分析的
-要求，从而可聚焦到信号的任意细节，解决了Fourier变换的困难问题。
-小波变换使用的基底函数不像FFT那样是三角函数，而是小波函数。所谓“小波函数”是一类函数，该类型函数需要满足：均值为0并在时域和频域都局部化
-（不是蔓延整个坐标轴的），满足这两条的函数就是小波函数。具体来说，就是小波在整个时间范围的幅度平均值是0，具有有限的持续时间和突变的频率和振幅，
-可以是不规则，也可以是不对称。
-小波有很多，最简单的是Haar Wavelet。所以小波分析或者说小波变换要做的就是将原始信号表示为一组小波基的线性组合，然后通过忽略其中不重要的部分达
-到数据压缩或者说降维的目的。另外注意小波变换的结果是2D的时频谱，不是FFT那样的1D频谱。
-See https://www.youtube.com/watch?v=ExU0izGXgSI for more detail of wavelet transform technology
-"""
 def calculate_wavelet_transform(img):
     """
     DWT stand for Discrete Wavelet Transform.
@@ -665,10 +412,8 @@ def calculate_gradient_map(out_colors, img):
         raise SystemExit('Error: Dimension of gradient operator is not correct!')
 
     
-#    gradient_map = tc.cat((gradient_vertical_map, gradient_horizontal_map),1)
 
     if Amplify_Small_Value_In_Gradient_Map == True:
-#        gradient_map = (1 - tc.exp(-2.5 * abs(gradient_map)))*(gradient_map/abs(gradient_map)) # 1 - exp(-ax), a = 2.5
         gradient_map = 1 - tc.exp(-2.5 * gradient_map)
 
     return gradient_map
@@ -681,7 +426,6 @@ def default_conv(in_channels, out_channels, kernel_size, bias = True):
         padding=(kernel_size//2), bias=bias)
 
 
-"""(Not used yet in this code)Calculate PSNR for MRI image in shape (N, C, H, W)"""
 def calc_psnr_for_mri_image(img1, img2):
     ### args:
         # img1: pytorch tensor, shape is [N, C, H, W]
@@ -692,12 +436,6 @@ def calc_psnr_for_mri_image(img1, img2):
     return -10 * tc.log10(mse).mean(0).mean(0)
 
 
-"""
-(Not used yet in this code)
-L1 Charbonnier Loss. See more information regarding L1 Charboniier Loss from paper: 2018.Fast and Accurate Image Super-Resolution with 
-Deep Laplacian Pyramid Networks. L1 Charboniier Loss in theory can be used to replace the (smooth) L1 loss, to provide reconstructed 
-image with less over-smoothing issues and problem.
-"""
 class L1_Charbonnier_Loss(tc.nn.Module):
     def __init__(self):
         super(L1_Charbonnier_Loss,self).__init__()
@@ -709,12 +447,6 @@ class L1_Charbonnier_Loss(tc.nn.Module):
         loss = tc.mean(error)
         return loss
 
-
-"""
-Negative Total Variation Loss(TV loss). negative_tv_loss = 1 - TV.
-Minimize总变差（TV）loss促进了生成的图像中的空间平滑性。于是minimize Negative Total Variation Loss将防止图像过分平滑。
-See more information regarding TV Loss from paper: 2015.iSeeBetter: Spatio-temporal video super-resolution using recurrent generative back-projection networks
-"""
 class NegativeTVLoss(nn.Module):
     def __init__(self, negative_tv_loss_weight = 1, tv_loss_weight = 1):
         super(NegativeTVLoss, self).__init__()
@@ -742,13 +474,6 @@ class TVLoss(nn.Module):
     def _tensor_size(self, t):
         return t.size()[1]*t.size()[2]*t.size()[3]
 
-
-"""
-Negative Trace Loss. Negative_Trace_Loss = 1/(trace(SR*HR) + 1.000e-10).
-trace(SR*HR)表示SR和HR的相似程度。两个向量内积是把一个向量投影到另一个上的长度，这个值可以用于描述两个向量的相似性。两个矩阵A、B的相似性
-可以用A、B两个矩阵的内积表征，被定义为Trace(AB)。于是minimize Negative_Trace_Loss可以最大化相似两个矩阵。
-见paper: 2015.LRTV: MR Image Super-Resolution With Low-Rank and Total Variation Regularizations
-"""
 class NegativeTraceLoss(nn.Module):
     def __init__(self, negative_trace_loss_weight = 1):
         super(NegativeTraceLoss, self).__init__()
@@ -760,12 +485,6 @@ class NegativeTraceLoss(nn.Module):
             total_loss = total_loss + 1 / (tc.trace(SR[i, 0, :, :]*HR[i, 0, :, :]) + 1.000e-10)
         return self.negative_trace_loss_weight * total_loss/SR.size(0)
 
-
-"""
-Gradient Map Guided Weight For Pixel Wise Loss.
-SR和HR分别求gradient map，再相减得到一个gradient map差的矩阵，再把这个gradient map差的矩阵从(H * W)变为(1 * HW)，然后再过一个softmax，再变回H * W，
-然后把得到的矩阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-"""
 class GradientMapGuidedWeightForPixelWiseLoss(nn.Module):
     def __init__(self):
         super(GradientMapGuidedWeightForPixelWiseLoss, self).__init__()
@@ -779,11 +498,6 @@ class GradientMapGuidedWeightForPixelWiseLoss(nn.Module):
         gradient_map_difference_weight_matrix = gradient_map_difference_weight_matrix.reshape(N, C, H, W)
         return gradient_map_difference_weight_matrix
 
-
-"""
-SSIM Map Guided Weight For Pixel Wise Loss.
-SR和HR求SSIM map，再用1减这个SSIM map得到一个矩阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-"""
 class SSIMMapGuidedWeightForPixelWiseLoss(nn.Module):
     def __init__(self):
         super(SSIMMapGuidedWeightForPixelWiseLoss, self).__init__()
@@ -793,14 +507,6 @@ class SSIMMapGuidedWeightForPixelWiseLoss(nn.Module):
         one_minus_ssim_map_weight_matrix = 1 - ssim_map_weighted
         return one_minus_ssim_map_weight_matrix
 
-        
-"""
-Uncertainty KL Loss. 对HR的每一个像素的ground truth值都当做dirac分布，然后把RCAN网络输出部分输出两个变量，一个是每个像素的均值，另一个是每个像素的方差。
-然后通过minimize KL散度的方式得到一个MSE loss的变形，用这个loss来训练网络从而可以预测每个像素的方差。
-见论文：2019.Bounding Box Regression with Uncertainty for Accurate Object Detection公式(9),(10). 
-另外，对这个方案，我们可以考虑不对每一个SR image的pixel都求variance，而是只对当前SR image中那些SSIM Map中值小于一定threshold的pixel求variance。
-这个threhold可以设为当前SSIM map中所有元素的均值减去一倍(68%置信区间)或者二倍(95%置信区间)的方差。
-"""
 class UncertaintyKlLoss(nn.Module):
     def __init__(self, uncertainty_kl_loss_weight = 1, use_ssim_guided_uncertainty_kl_loss = True):
         super(UncertaintyKlLoss, self).__init__()
@@ -824,52 +530,15 @@ class UncertaintyKlLoss(nn.Module):
             uncertainty_kl_loss = tc.abs(self.uncertainty_kl_loss_weight * tc.sum( selection_matrix * (tc.exp(-tc.log(variance_of_SR.pow(2))) * tc.square(HR - SR) + 0.5 * tc.log(variance_of_SR.pow(2)))))
         return uncertainty_kl_loss
 
-
-"""
-Uncertainty negative log Gaussian pdf likelihood loss. 把RCAN网络输出部分输出两个变量，一个是每个像素的均值，另一个是每个像素的方差。
-但这里不再是用minimize KL散度的方式得到一个MSE loss的变形，而是直接写出以估计出的SR每个像素的均值方差表示的高斯分布的pdf函数，把HR 
-groundtruth的每个像素值带入该高斯pdf表达式求出对应的likelihood probability。当我们maximize每一个像素的likelihood probability时候，
-则意味着对应的高斯分布的variance越小的时候(以SR每个像素的均值方差表示的高斯分布越尖瘦)才能达到，同时需要对应的高斯分布的均值很接近SR的
-像素值。所以我们通过minimize sum(-log(Gaussian_pdf(i))),i表示每个像素。用这种方案得到每个像素的方差。
-见论文：2019.Gaussian YOLOv3: An Accurate and Fast Object Detector Using Localization Uncertainty for Autonomous Driving.
-另外，对这个方案，我们可以考虑不对每一个SR image的pixel都求variance，而是只对当前SR image中那些SSIM Map中值小于一定threshold的pixel求variance。
-这个threhold可以设为当前SSIM map中所有元素的均值减去一倍(68%置信区间)或者二倍(95%置信区间)的方差。
-"""
 class UncertaintyNegativeLogGaussianPdfLikelihoodLoss(nn.Module):
     def __init__(self, uncertainty_nll_gaussian_pdf_likelihood_loss_weight = 1, use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss = False):
         super(UncertaintyNegativeLogGaussianPdfLikelihoodLoss, self).__init__()
         self.uncertainty_nll_gaussian_pdf_likelihood_loss_weight = uncertainty_nll_gaussian_pdf_likelihood_loss_weight
         self.use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss = use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss
         self.eps = 1e-5
-#        self.ssim_map_function = pytorch_ssim_map.SSIM().to(device)
 
     def forward(self, SR, variance_of_SR, HR):
-#        likelihood_probability_of_hr = gauss_pdf(x = HR, mu = SR, P = variance_of_SR)
-#        ssim_map, _ = self.ssim_map_function(SR, HR)
-        """ nll_loss = tc.nn.NLLLoss2d() """
-        """ soomth_l1_loss = nn.SmoothL1Loss().to(device) """
-        """
-        if self.use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss == False:
-            selection_matrix = tc.ones_like(ssim_map)
-        else:   # self.use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss == True:
-            selection_matrix = tc.zeros_like(ssim_map)
-            threshold = tc.mean(ssim_map, dim = (2, 3)) - tc.std(ssim_map, dim = (2, 3))
-            for i in range(SR.size(0)):
-                batch_selection = selection_matrix[i,:,:,:]
-                batch_ssim = ssim_map[i,:,:,:]
-                batch_selection[batch_ssim < threshold[i]] = 1
-                selection_matrix[i,:,:,:] = batch_selection
-        """
         # Beware the target argument of nn.NLLLoss2d should have the shape [batch_size, height, width].
-#        all_ones_probability = tc.ones_like(ssim_map)
-        """ uncertainty_nll_gaussian_pdf_likelihood_loss = nll_loss(input = tc.log(selection_matrix * likelihood_probability_of_hr), target = selection_matrix.long().squeeze(1)) """
-        
-#        print(tc.isnan(tc.sum(likelihood_probability_of_hr)))
-#        print(tc.abs(tc.sum(likelihood_probability_of_hr))=='inf')
-#        print(tc.isnan(tc.sum(tc.log(likelihood_probability_of_hr))))
-#        print(tc.abs(tc.sum(tc.log(likelihood_probability_of_hr)))=='inf')
-        
-#        uncertainty_nll_gaussian_pdf_likelihood_loss = self.uncertainty_nll_gaussian_pdf_likelihood_loss_weight * tc.mean(tc.abs(selection_matrix * tc.log(tc.max(likelihood_probability_of_hr, 1e-8*tc.ones_like(likelihood_probability_of_hr)))))
         uncertainty_nll_gaussian_pdf_likelihood_loss = self.uncertainty_nll_gaussian_pdf_likelihood_loss_weight * tc.mean( 0.5 * (HR - SR)**2 / (variance_of_SR + self.eps) + 0.5 * tc.log(variance_of_SR + self.eps))
         return uncertainty_nll_gaussian_pdf_likelihood_loss
 
@@ -879,46 +548,14 @@ class UncertaintyNegativeLogLaplacianLikelihoodLoss(nn.Module):
         self.uncertainty_nll_laplacian_likelihood_loss_weight = uncertainty_nll_laplacian_likelihood_loss_weight
         self.use_ssim_guided_uncertainty_nll_laplacian_likelihood_loss = use_ssim_guided_uncertainty_nll_laplacian_likelihood_loss
         self.eps = 1e-5
-#        self.ssim_map_function = pytorch_ssim_map.SSIM().to(device)
 
     def forward(self, SR, variance_of_SR, HR):
-#        likelihood_probability_of_hr = gauss_pdf(x = HR, mu = SR, P = variance_of_SR)
-#        ssim_map, _ = self.ssim_map_function(SR, HR)
-        """
-        if self.use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss == False:
-            selection_matrix = tc.ones_like(ssim_map)
-        else:   # self.use_ssim_guided_uncertainty_nll_gaussian_pdf_likelihood_loss == True:
-            selection_matrix = tc.zeros_like(ssim_map)
-            threshold = tc.mean(ssim_map, dim = (2, 3)) - tc.std(ssim_map, dim = (2, 3))
-            for i in range(SR.size(0)):
-                batch_selection = selection_matrix[i,:,:,:]
-                batch_ssim = ssim_map[i,:,:,:]
-                batch_selection[batch_ssim < threshold[i]] = 1
-                selection_matrix[i,:,:,:] = batch_selection
-        """
         uncertainty_nll_laplacian_likelihood_loss = self.uncertainty_nll_laplacian_likelihood_loss_weight * tc.mean(tc.abs(HR - SR) / (variance_of_SR + self.eps) + tc.log(variance_of_SR + self.eps))
         return uncertainty_nll_laplacian_likelihood_loss
 
 
 class EvidentialLossSumOfSquares(nn.Module):
-  """The evidential loss function on a matrix.
-  This class is implemented with slight modifications from the paper. The major
-  change is in the regularizer parameter mentioned in the paper. The regularizer
-  mentioned in the paper didnot give the required results, so we modified it 
-  with the KL divergence regularizer from the paper. In orderto overcome the problem
-  that KL divergence are missing near zero so we add the minimum values to alpha,
-  beta and lambda and compare distance with NIG(alpha=1.0, beta=0.1, lambda=1.0)
-  This class only allows for rank-4 inputs for the output `targets`, and expectes
-  `inputs` be of the form [mu, alpha, beta, lambda] 
-  alpha, beta and lambda needs to be positive values.
-  """
-
   def __init__(self, debug=False, return_all=False):
-    """Sets up loss function.
-    Args:
-      debug: When set to 'true' prints all the intermittent values
-      return_all: When set to 'true' returns all loss values without taking average
-    """
     super(EvidentialLossSumOfSquares, self).__init__()
 
     self.debug = debug
@@ -940,26 +577,11 @@ class EvidentialLossSumOfSquares(nn.Module):
     return (t1+t2-0.5+t3+t4+t5+t6)
 
   def forward(self, inputs, targets):
-    """ Implements the loss function 
-    Args:
-      inputs: The output of the neural network. inputs has 4 dimension 
-        in the format [mu, alpha, beta, lambda]. Must be a tensor of
-        floats
-      targets: The expected output
-    Returns:
-      Based on the `return_all` it will return mean loss of batch or individual loss
-    """
     assert tc.is_tensor(inputs)
     assert tc.is_tensor(targets)
     assert (inputs[:,1] > 0).all()
     assert (inputs[:,2] > 0).all()
     assert (inputs[:,3] > 0).all()
-
-#    targets = targets.view(-1)
-#    y = inputs[:,0].view(-1) #first column is mu,delta, predicted value
-#    a = inputs[:,1].view(-1) + 1.0 #alpha
-#    b = inputs[:,2].view(-1) + 0.1 #beta to avoid zero
-#    l = inputs[:,3].view(-1) + 1.0 #lamda
     
     targets = targets.squeeze(1)
     y = inputs[:,0,:,:] #first column is mu,delta, predicted value
@@ -994,11 +616,6 @@ class EvidentialLossSumOfSquares(nn.Module):
     
     
     J = J1 + J2 + J3 + J4 + J5 + J6
-    #Kl_divergence = torch.abs(y - targets) * (2*a + l)/b ######## ?????
-    #Kl_divergence = ((y - targets)**2) * (2*a + l)
-    #Kl_divergence = torch.abs(y - targets) * (2*a + l)
-    #Kl_divergence = 0.0
-    #Kl_divergence = (torch.abs(y - targets) * (a-1) *  l)/b
     Kl_divergence = self.kl_divergence_nig(y, targets, a, b, l)
     
     if self.debug:
@@ -1013,20 +630,12 @@ class EvidentialLossSumOfSquares(nn.Module):
       ret_loss = loss
     else:
       ret_loss = loss.mean()
-    #if torch.isnan(ret_loss):
-    #  ret_loss.item() = self.prev_loss + 10
-    #else:
-    #  self.prev_loss = ret_loss.item()
-
     return ret_loss
 
 
 
 
 "Pyramidal Convolution(Py_Conv) Layer"
-"""
-2020.Pyramidal Convolution: Rethinking Convolutional Neural Networks for Visual Recognition. https://arxiv.org/abs/2006.11538
-"""
 class PyConv4(nn.Module):
     def __init__(self, inplans, planes, pyconv_kernels=[3, 5, 7, 9], stride=1, pyconv_groups=[1, 4, 8, 16]):
         super(PyConv4, self).__init__()
@@ -1064,14 +673,9 @@ class PyConv2(nn.Module):
         return tc.cat((self.conv2_1(x), self.conv2_2(x)), dim=1)
 
 def py_conv(in_channels, out_channels, kernel_size, bias = False):
-    # Some default settings for py_conv
     num_of_kernels = 3  # Note: this could be changed
     stride = 1
     if in_channels == 1 or in_channels == 2 or out_channels == 1 or out_channels == 2:
-        # in_channels == 1 or out_channels == 1 means it is the 2D MRI image(in downsampling or upsmapling), py_conv only apply 
-        # for feature map at image branch rather than on the 2D MRI image directly;
-        # in_channels == 2 or out_channels == 2 means it is either the k space branch complex value data or it is the "modules_end_stage_fusion_of_outcome",
-        # as explained above py_conv only apply for feature map at image branch
         return nn.Conv2d(
         in_channels, out_channels, kernel_size,
         padding=(kernel_size//2), bias=bias) # just return default conv for 2D MRI image
@@ -1090,9 +694,6 @@ def py_conv(in_channels, out_channels, kernel_size, bias = False):
 
 
 "Coordinate Conv Layer"
-"""
-2018.An Intriguing Failing of Convolutional Neural Networks and the CoordConv Solution. https://arxiv.org/abs/1807.03247
-"""
 class AddCoords(nn.Module):
     def __init__(self, with_r = False):
         super().__init__()
@@ -1139,7 +740,6 @@ class CoordConv(nn.Module):
 
     def forward(self, x):
         ret = self.addcoords(x)
-#        print("implement coord_conv layer in network")
         ret = self.conv(ret)
         return ret
 
@@ -1150,14 +750,8 @@ def coord_conv(in_channels, out_channels, kernel_size, bias = True):
 
 
 "Deformable Conv Layer"
-''' One approach to implement deformable conv layer '''
 class DeformConv2d(nn.Module):
     def __init__(self, inc, outc, kernel_size=3, padding=1, stride=1, bias=None, modulation=False):
-        """
-        Args:
-            modulation (bool, optional): If True, use Modulated Defomable Convolution(Deformable ConvNets v2, 
-            see 2018. Deformable ConvNets v2: More Deformable, Better Results. https://arxiv.org/abs/1811.11168).
-        """
         super(DeformConv2d, self).__init__()
         self.kernel_size = kernel_size
         self.padding = padding
@@ -1235,7 +829,6 @@ class DeformConv2d(nn.Module):
 
         x_offset = self._reshape_x_offset(x_offset, ks)
         out = self.conv(x_offset)
-#        print("implement deformable_conv layer in network")
         return out
 
     def _get_p_n(self, N, dtype):
@@ -1290,24 +883,7 @@ class DeformConv2d(nn.Module):
 
 ''' Another approach to implement deformable conv layer '''
 class ConvOffset2D(nn.Conv2d):
-    """
-    ConvOffset2D
-    Convolutional layer responsible for learning the 2D offsets and output the
-    deformed feature map using bilinear interpolation.
-    Note that this layer does not perform convolution on the deformed feature
-    map. See get_deform_cnn in cnn.py for usage.
-    """
     def __init__(self, in_channels, out_channels, kernel_size = 3, padding = 1, bias = False, init_normal_stddev=0.01, **kwargs):
-        """Init
-        Parameters
-        ----------
-        filters : int
-            Number of channel of the input feature map
-        init_normal_stddev : float
-            Normal kernel initialization
-        **kwargs:
-            Pass to superclass. See Con2d layer in pytorch
-        """
         self.filters = in_channels
         self.kernel_size = kernel_size
         self._grid_param = None
@@ -1373,20 +949,11 @@ class ConvOffset2D(nn.Conv2d):
         return x
 
 def deformable_conv(in_channels, out_channels, kernel_size, bias = True):
-    # Aprroach one for deformable conv layer(running out of memory)
-    """ return DeformConv2d(
-        in_channels, out_channels, kernel_size = kernel_size,
-        padding = (kernel_size//2), bias=bias) """
-    # Aprroach two for deformable conv layer
     return ConvOffset2D(
         in_channels, out_channels, kernel_size = kernel_size,
         padding = (kernel_size//2), bias=bias)
 
 
-"Sine Activation Function"
-"""
-2020.Implicit Neural Representations with Periodic Activation Functions. https://arxiv.org/abs/2006.09661
-"""
 class Sine(nn.Module):
     def __init__(self, w0 = 1.0):
         super().__init__()
@@ -1396,11 +963,6 @@ class Sine(nn.Module):
         return tc.sin(self.w0 * x)
 
 
-"FReLU Activation Function"
-"""
-FReLU formulation. The funnel condition has a window size of kxk. (k=3 by default)
-2020.Funnel Activation for Visual Recognition. https://arxiv.org/abs/2007.11824
-"""
 class FReLU(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -1414,10 +976,6 @@ class FReLU(nn.Module):
         return x
 
 
-"Dynamic ReLU Activation Function"
-"""
-2020.Dynamic ReLU. https://arxiv.org/abs/2003.10027
-"""
 class DyReLU(nn.Module):
     def __init__(self, channels, reduction=4, k=2, conv_type='2d'):
         super(DyReLU, self).__init__()
@@ -1502,22 +1060,8 @@ class FFT_K_SPACE(nn.Module):
         super(FFT_K_SPACE, self).__init__()
 
     def forward(self, x):
-        # Take in image x at time domain and fetch the k space data at frequency domain. 
-        # See https://pytorch.org/docs/stable/generated/torch.rfft.html#torch.rfft
-        # Beware the shape of input for irfft in our case should be (N, C, H, W)
         k_space_result = tc.rfft(x, signal_ndim = 3, onesided = False)
         return k_space_result
-""" class FFT_K_SPACE(nn.Module):
-    def __init__(self):
-        super(FFT_K_SPACE, self).__init__()
-    def forward(self, x):
-        x = tc.unsqueeze(x, -1) #----- create the additional last dimension for input matrix with (N, C, H, W)
-        x_complex = tc.cat((x, tc.zeros_like(x)), -1)
-        k_space_result = tc.fft(x_complex, 2)
-        # print(k_space_result.size())
-#        out = tc.sqrt(tc.mul(k_space_result[:, :, :, :, 0], k_space_result[:, :, :, :, 0]) + tc.mul(k_space_result[:, :, :, :, 1], k_space_result[:, :, :, :, 1]))
-#        return out
-        return k_space_result """
 
 class IFFT_TIME_DOMAIN(nn.Module):
     def __init__(self):
@@ -1565,11 +1109,6 @@ class MeanShift(nn.Conv2d):
 
 "Channel Attention (CA) Layer"
 class CALayer(nn.Module):
-    """
-    Channel Attention (CA) Layer, is basical block in RCAN. One CA forms one RCAB(Residual Channel Attention Block).
-    See figure 3 of original RCAN paper.
-    Beware the CA Layer used in RCAN is actually same as the channel attention mechanism propsed in SENet(Squeeze-and-Excitation Networks).
-    """
     def __init__(self, channel, reduction=16):
         """
         reduction is the r mentioned in 3.3 Channel Attention in RCAN paper
@@ -1725,14 +1264,8 @@ class SelfAttentionBasedChannelAndSpatialAttention(nn.Module):
         else:
             raise ValueError("Not supported channel and spatial attention mode yet")
 
-
-
 "Residual Channel Attention Block (RCAB)"
 class RCAB(nn.Module):
-    """
-    Residual Channel Attention Block (RCAB): There are several RCABs belong to one RG(Residual Group).
-    See figure 4 of original RCAN paper
-    """
     def __init__(
         self, conv, n_feat, kernel_size, reduction,
         bias=True, bn=False, act=nn.ReLU(True), res_scale=1, use_channel_and_spatial_attention_inside_RCAB = False, 
@@ -1774,10 +1307,6 @@ class RCAB(nn.Module):
 
 "Residual Group (RG)"
 class ResidualGroup(nn.Module):
-    """
-    RG(Residual Group): There are several RGs belong to one RIR(Residual in Residual module).
-    See upper figure in figure 2 of original RCAN paper
-    """
     def __init__(self, conv, n_feat, kernel_size, reduction, act, res_scale, n_rcablocks, use_channel_and_spatial_attention_inside_RCAB = False, 
                         channel_and_spatial_attention_framework = 'CBAM', channel_and_spatial_attention_mode = 'sequential_mode'):
         super(ResidualGroup, self).__init__()
@@ -1906,7 +1435,6 @@ class KSpaceDualResidualGroup(nn.Module):
         res_image_branch = tc.cat((res1, self.ifft_operation(res2_in_format_fits_irfft)), 1) # shape of res_image_branch is (N, 2*C, H, W)
         if Use_Channel_Attention_For_Cross_Branch_Fusion == True:
             res_image_branch = self.channel_attention_for_cross_branch_fusion_in_image_branch(res_image_branch) # set up channel attention for both image and gradeint branch when theu fuse into one feature map
-#            print("channel attention for fusion:res_image_branch")
         res_image_branch = self.connection_in_image_branch(res_image_branch) # shape of res_image_branch is (N, C, H, W)
 
         # fuse intermedian results in both branches into k space branch
@@ -1915,7 +1443,6 @@ class KSpaceDualResidualGroup(nn.Module):
         res_k_space_branch = tc.cat((res1, res2), 1) # shape of res_k_space_branch is (N, 4*C, H, W)
         if Use_Channel_Attention_For_Cross_Branch_Fusion == True:
             res_k_space_branch = self.channel_attention_for_cross_branch_fusion_in_k_space_branch(res_k_space_branch) # set up channel attention for both image and gradeint branch when theu fuse into one feature map
-#            print("channel attention for fusion:res_k_space_branch")
         res_k_space_branch = self.connection_in_k_space_branch(res_k_space_branch) # shape of res_k_space_branch is (N, 2*C, H, W)
 
         res_image_branch = res_image_branch.unsqueeze(0) # shape of res_image_branch is (1, N, C, H, W)
@@ -1983,13 +1510,6 @@ class WaveletsTransformDualResidualGroup(nn.Module):
 
 "Upsampler Module, implemented by employeed of sub-pixel conv"
 class Upsampler(nn.Sequential):
-    """
-    Upsampling/Upscale module, used as last part of "SR reconstruction network model" if the network model employ the "post-upsampling mode".
-    Beware the actual upsampling approach is "sub-pixel conv" (which is nn.PixelShuffle() in Pytorch) which was proposed in
-    paper: "2016. Real-Time single image and video super-resolution using an efficient sub-pixel convolutional neural network".
-    Such sub-pixel conv actually constructs F ∗ S^2 feature maps of dimensions H ×W are reshaped into F feature maps of dimensions H ∗ S × W ∗ S, 
-    where S is the upsampling factor.
-    """
     def __init__(self, conv, scale, n_feats, use_channel_and_spatial_attention_inside_upsampler = False, 
         channel_and_spatial_attention_framework = 'CBAM', channel_and_spatial_attention_mode = 'sequential_mode'):
         super(Upsampler, self).__init__()
@@ -2056,10 +1576,6 @@ class Upsampler(nn.Sequential):
 
 "Residual Channel Attention Network (RCAN) based Dual Domain Network for Super Resolution MRI"
 class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
-    """
-    RCAN(Deep Residual Channel Attention Network) = RIR(Residual in Residual module) + Upsampler Module.
-    See bottom figure in figure 2 of original RCAN paper
-    """
     def __init__(self, args, not_use_last_conv_to_change_num_channels_to_n_colors = False):
         super(RCAN_Based_MRI_SR_Dual_Domain_2D, self).__init__()
         if args['type_of_network'] == 'image_single_domain':
@@ -2108,14 +1624,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
         use_channel_and_spatial_attention_inside_RCAB = args['use_channel_and_spatial_attention_inside_RCAB']   #  whether we use channel and spatial attention block inside RCAB to replace CALayer, e.g. True, False
         channel_and_spatial_attention_framework = args['channel_and_spatial_attention_framework']   # which channel and spatial framework is used in the code, e.g. 'CBAM', 'self_attention'
         channel_and_spatial_attention_mode = args['channel_and_spatial_attention_mode'] # which end to end channel and spatial block to use, e.g. 'sequential_mode', 'parallel_mode'
-
-        # --------------------------------------we may NOT need this section------------------------------------------------------- #
-        """ # don't know exactly what is doing here. However, it seems shifting the "rgb_range" to be somewhere in the mean
-        # RGB mean for DIV2K
-        rgb_mean = (0.4488, 0.4371, 0.4040)
-        rgb_std = (1.0, 1.0, 1.0)
-        self.sub_mean = MeanShift(args.rgb_range, rgb_mean, rgb_std) """
-        # ----------------------------------------------------------------------------------------------------------------------- #
 
         # define commonly use head module
         modules_head = [conv(in_colors, n_feats, kernel_size)] # the first conv layer in RCAN, show in figure 2 of RCAN paper
@@ -2221,10 +1729,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
                                   channel_and_spatial_attention_framework = channel_and_spatial_attention_framework, channel_and_spatial_attention_mode = channel_and_spatial_attention_mode))
                 modules_tail.append(conv(n_feats, out_colors, kernel_size))
 
-        # Add a downsize converter by using conv layer.
-        # The purpose of original RCAN designed in original RCAN paper is to upscale scale times of LR image, the output from RIR has same size as input LR image. However, here in our task
-        # we actually want to maintain output(SR) and input(LR) same as, it means we need to downsize the image before leave it into upscale module. That is the reason we need extra conv layer to perform 
-        # down size with scale time first before going through upscale with scale time
         if (scale == 2):
             # W2=(W1−F+2P)/S+1, H2=(H1−F+2P)/S+1.
             self.down_size_converter = nn.Conv2d(n_feats, n_feats, 3, padding=1, stride=2)
@@ -2249,11 +1753,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
                 ])
         else:
             raise ValueError("scale must be 2 or 4.")
-
-        # --------------------------------------we may NOT need this section------------------------------------------------------- #
-        """ # don't know exactly what is doing here. However, it seems shifting the "rgb_range" to be somewhere in the mean
-        self.add_mean = MeanShift(args.rgb_range, rgb_mean, rgb_std, 1) """
-        # ----------------------------------------------------------------------------------------------------------------------- #
 
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
@@ -2281,7 +1780,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
         self.relu = nn.ReLU()
         if Use_NIG_Regression_Loss == True:
             self.evidence = nn.Softplus()
-#            self.evidence = nn.ReLU()
 
             
     def forward(self, x):
@@ -2292,7 +1790,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
             res = self.body(x) # data goes through sveral ResidualGroups
             if self.decoupled_uncertainty_network == True:
                 res += x
-#                res_1, res_2 = res.chunk(2,dim=1)
                 res_1 = self.pretail_branch_1(res)
                 res_2 = self.pretail_branch_2(res)
                 res_1 = self.tail_branch_1(res_1)
@@ -2302,22 +1799,17 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
             else:
                 res = self.pretail(res)
                 res += x # long skip connection of RIR
-#            if (Maintain_in_plne_Size == True):
-#                res = self.down_size_converter(res) # extra down_size_converter is needed to shtik size of image scale times if we expect same size as input LR for SR output
                 x = self.tail(res) # data goes through upsampling module and one more conv layer
                 
                 if Use_NIG_Regression_Loss == True:
                     mu, logv, logalpha, logbeta = tc.chunk(x, 4, 1)
                     v = self.evidence(logv)
-#                    alpha = self.evidence(logalpha) + 1
                     alpha = self.evidence(logalpha)
                     beta = self.evidence(logbeta)
                     x = tc.cat((mu, alpha, beta, v),1)
                 elif Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Gaussian_Pdf_Likelihood_Loss == True or Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Laplacian_Likelihood_Loss == True:
                     x = self.relu(x)
                 
-            # do NOT understand why need this, may NOT be useful for us
-            """ x = self.add_mean(x) """
             return x, None, 'Single Branch RCAN framework Network'
 
         elif self.type_of_network == 'gradient_map_dual_domain':
@@ -2351,8 +1843,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
                 gradientmap_branch_res = self.down_size_converter_for_gradient_map_branch(gradientmap_branch_res)
             image_branch_y = self.tail(image_branch_res) # data goes through upsampling module and one more conv layer
             gradientmap_branch_y = self.tail_for_gradient_map_branch(gradientmap_branch_res) # data goes through upsampling module and one more conv layer
-            # do NOT understand why need this, may NOT be useful for us
-            """ y = self.add_mean(y) """
 
             image_branch_fused_y = tc.cat((image_branch_y, gradientmap_branch_y), 1)
             image_branch_fused_y = self.modules_end_stage_fusion_of_outcome(image_branch_fused_y)
@@ -2418,8 +1908,6 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
             return image_branch_fused_y, k_space_branch_y, 'Secondary branch is k space branch'
 
         elif self.type_of_network == 'wavelets_transform_dual_domain':
-            # y_low_frequency is the low frequency component(approximation coeefficient)
-            # y_high_frequency is the 1st level high frequency components(include 1st level horizontal detail coefficients, vertical detail coefficients, diagonal detail coefficients)
             y_low_frequency, y_high_frequency = calculate_wavelet_transform(x) # shape of y_low_frequency: (N, C, H′, W′) and shape of y_high_frequency: (N, C, 3, H′, W′)
             if plot_the_wavelets_transform_data_of_input_image == True:
                 plt.subplot(2, 3, 1)
@@ -2457,11 +1945,7 @@ class RCAN_Based_MRI_SR_Dual_Domain_2D(nn.Module):
                 # extra down_size_converter is needed to shrik size of image scale times if we expect same size as input LR for SR output
                 image_branch_fused_y = self.down_size_converter(image_branch_fused_y)
             image_branch_fused_y = self.tail(image_branch_fused_y) # data goes through upsampling module and one more conv layer. # shape of image_branch_fused_y is (N, 1, H, W)
-            # do NOT understand why need this, may NOT be useful for us
-            """ y = self.add_mean(y) """
             wavelets_branch_fused_y_low_frequency, wavelets_branch_fused_y_high_frequency = calculate_wavelet_transform(image_branch_fused_y) # shape of wavelets_branch_fused_y_high_frequency is (N, 1, 3, H', W')
-            """ wavelets_branch_fused_y_high_frequency = wavelets_branch_fused_y_high_frequency.permute(0, 1, 3, 4, 2) # shape from (N, 1, 3, H', W') --> (N, 1, H', W', 3) """
-            # (N, 1, H, W), (N, 1, 3, H', W')
             return image_branch_fused_y, wavelets_branch_fused_y_high_frequency, 'Secondary branch is wavelets high frequency components branch'
 
 
@@ -2931,18 +2415,10 @@ class Progressive_Learning_Wrapper_MRI_SR_Dual_Domain_2D(nn.Module):
             raise ValueError("Not support more than 3 stage!")
 
 
-
-
-
 "HR Reference based MRI Reconstruction for multiple size, e.g. 2x, 4x, 8x, etc."
 class HR_Reference_Based_MRI_SR_Dual_Domain_2D(nn.Module):
     def __init__(self, args):
         super(HR_Reference_Based_MRI_SR_Dual_Domain_2D, self).__init__()
-        """
-        For the HR reference based MRI reconstruction network. The network framework and network type of normal SR branch are based on the args setting 
-        up, e.g. RCAN/U-Net as network framework, image single network/gradient map dual domain network/k-space dual domain network/wavelet dual domain 
-        network as network type. However, HR reference branch is always a simple RCAN network without upsampler.
-        """
 
         "----------------------------------- Define normal SR branch, make sure not_use_last_conv_to_change_num_channels_to_n_colors = True ---------------------------------"
         if args['main_network_framework'] == 'RCAN' and (args['type_of_network'] == 'image_single_domain' or args['type_of_network'] == 'gradient_map_dual_domain') and args['long_skip_connection_to_reconstruct_residual_part_only'] == False:
@@ -3030,15 +2506,10 @@ class HR_Reference_Based_MRI_SR_Dual_Domain_2D(nn.Module):
         return final_HR_reference_based_result, output_from_secondary_branch_in_SR_branch, network_model_type_of_SR_branch
 
 
-
-
-
 device=tc.device("cuda" if use_cuda else "cpu")
 
 if Freeze_random_seed == True:
     tc.manual_seed(args['seed'])
-#    tc.backend.cudnn.deterministic = True
-#    tc.backend.cudnn.benchmark = False
     print('Seed is frozen!')
     
 if args['use_HR_reference'] == True:
@@ -3053,10 +2524,6 @@ if Use_saved_model == True:
     our_rcan_mri_sr_2d.load_state_dict(min_validation_loss_model_wts)
     print("Saved model loaded")
     
-# Weight initialization using He initialization.
-""" for m in our_rcan_mri_sr_2d.modules():
-    if isinstance(m, (nn.Conv2d, nn.Linear)):
-        nn.init.kaiming_normal_(m.weight, mode='fan_in') """
 
 if tc.cuda.device_count()>1:
     our_rcan_mri_sr_2d=nn.DataParallel(our_rcan_mri_sr_2d)
@@ -3138,15 +2605,6 @@ if Predict_Variance_Of_Pixel_For_MRI_SR_And_Use_Uncertainty_Negative_Log_Laplaci
 if Use_NIG_Regression_Loss == True:
     EvidentialRegression = EvidentialLossSumOfSquares()
     
-# =============================================================================
-# print('The loss function is L1Loss')
-# loss_function = nn.L1Loss(size_average = False).to(device) 
-# =============================================================================
-# =============================================================================
-# print('The loss function is CrossEntropyLoss')
-# loss_function = nn.CrossEntropyLoss().to(device)        #----- here use cross entropy loss
-# =============================================================================
-
 
 """""""""""""""""""""""""""
 5. Train the MRI_SR_Dual_Domain_2D part
@@ -3263,28 +2721,7 @@ for epoch in range(EPOCH_NUM):
     print('learning rate for epoch %d is : %f' % (epoch, optimizer.param_groups[0]['lr']))
 
     for i, data in enumerate(trainloader, 0):
-# =============================================================================
-#         print('This is the ', i, ' batch for the ', epoch, ' epoch' )
-# =============================================================================
-        # We call tc.cuda.empty_cache() if we use deformable_conv, due that deformable_conv will use huge amount of memory so we need to
-        # call tc.cuda.empty_cache() trying to empty the unused GPU cache(although it may be useless also and it is still out of GPU memory
-        # when applying deformable_conv).
-
-        """
-        每一次调用loss.backward()函数之前都要用optimizer.zero_grad()将梯度清零。因为如果梯度不清零，pytorch中会将上次计算的梯度和本次计算
-        的梯度累加。
-        PyTorch这种自动累加之前计算的梯度和本次计算梯度的机制逻辑的好处是，当我们的硬件限制不能使用更大的bachsize时，使用多次计算较小的
-        bachsize的梯度平均值来代替，更方便，坏处当然是正常计算时我们只需要本次计算的梯度于是每次都要清零梯度。
-        """
-        "clear all stored gradients if there exist"
         optimizer.zero_grad()
-        # print('The optimizer has been cleared' )
-
-        """
-        if args['conv_layer_type'] == 'deformable_conv':
-            tc.cuda.empty_cache()
-        """
-        
         if args['use_HR_reference'] == False:
             "load input data"
             inputs, labels = data
@@ -3335,12 +2772,9 @@ for epoch in range(EPOCH_NUM):
             HR_freq = fft_k_space(labels)
 
         "calculate the gradients for all Variables during back prop"
-        "vgg loss + pixel MSE loss + fft frequency loss, and we use weight_decay in Adam so that is L2 regularization"
         if Use_Feature_Map_Loss == True:
             feature_map_loss = args_loss_weight['feature_map_weight']*loss_function_MSE(SR_features, HR_features)
             feature_map_loss_training.append(feature_map_loss.item())    # Only save the value of feature_map_loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage
-        # feature_map_loss = 0.000000001*loss_function_CE(SR_features, HR_features)
-#           print("feature_map_loss: ", feature_map_loss)
         if Use_Pixel_Wise_Loss == True:
             if Use_Gradient_Map_Guided_Pixel_Wise_Loss == True:
                 gradient_map_guided_weight_for_pixel_wise_loss = GradientMapGuidedWeightForPixelWiseLoss()
@@ -3353,7 +2787,6 @@ for epoch in range(EPOCH_NUM):
             else:
                 pixel_wise_loss = args_loss_weight['pixel_wise_weight']*loss_function_L1(img_outputs, labels)
             pixel_wise_loss_training.append(pixel_wise_loss.item())    # Only save the value of pixel_wise_loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage 
-#            print("pixel_wise_loss: ", pixel_wise_loss)
         if Use_kspace_loss == True:
             if Amplify_High_Frequency_Value_In_K_Space_Loss == True:
                 k_space_freq_loss = args_loss_weight['k_space_weight']*(loss_function_MSE(
@@ -3365,12 +2798,7 @@ for epoch in range(EPOCH_NUM):
             else:
                 k_space_freq_loss = args_loss_weight['k_space_weight']*(loss_function_MSE(SR_freq[:,:,:,:,0], HR_freq[:,:,:,:,0]) + loss_function_MSE(SR_freq[:,:,:,:,1], HR_freq[:,:,:,:,1]))
             k_space_freq_loss_training.append(k_space_freq_loss.item())
-#            print(loss_function_MSE(SR_freq[:,:,:,:,0], HR_freq[:,:,:,:,0]))
-#            print(loss_function_MSE(SR_freq[:,:,:,:,1], HR_freq[:,:,:,:,1]))
-#            print("k_space_freq_loss: ", k_space_freq_loss.item())
 
-#        HR_ssim_weighted, HR_ssim = SSIM_function(labels, labels)
-#        SR_ssim_weighted, SR_ssim = SSIM_function(img_outputs, labels)
         HR_ssim = SSIM_function(labels, labels)
         SR_ssim = SSIM_function(img_outputs, labels)
 
@@ -3435,22 +2863,14 @@ for epoch in range(EPOCH_NUM):
 
         if tc.isnan(SR_ssim) or tc.isnan(HR_ssim):
             batch_with_nan.append(i)
-#            continue
 
-#            print('gradient_loss: ', gradient_map_loss)
-
-#            loss = pixel_wise_loss + ssim_loss
         if Use_Pixel_Wise_Loss == True:
             loss = pixel_wise_loss
         
         if Use_Feature_Map_Loss == True:
             loss = loss + feature_map_loss
 
-#            if ssim_loss < 0.5:
-#                loss = ssim_loss + feature_map_loss + pixel_wise_loss
-#                print('ssim_loss')
-#            else:
-#                loss = pixel_wise_loss + feature_map_loss
+
         if Use_kspace_loss == True:
             if tc.isnan(k_space_freq_loss) != 1:
                 loss = loss + k_space_freq_loss
@@ -3499,17 +2919,6 @@ for epoch in range(EPOCH_NUM):
         if network_model_type == 'Secondary branch is wavelets high frequency components branch':
             loss = loss + wavelets_high_frequency_components_branch_high_frequency_loss
 
-
-#            print('loss: ', loss)
-#            loss = feature_map_loss + pixel_wise_loss + k_space_freq_loss
-            # print('the loss has been checked')
-
-
-            "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-#            if tc.isnan(loss) == 1: #- loss == 'NaN':
-#                break
-            "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-
         loss_training.append(loss.item())  # Only save the value of loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage    
 
         "back prop"
@@ -3531,35 +2940,16 @@ for epoch in range(EPOCH_NUM):
                 print('[%d, %5d] loss: %.3f' \
                       % (epoch, i, running_loss / print_loss_per_batch))
             running_loss = 0.0
-        """
-        training_loss_for_current_epoch = loss_training / 50
-        feature_map_loss_for_current_epoch = feature_map_loss
-        pixel_wise_loss_for_current_epoch = pixel_wise_loss
-        ssim_loss_for_current_epoch = ssim_loss
-        gradient_img_loss_for_current_epoch = gradient_img_loss
-        k_space_freq_loss_for_current_epoch = k_space_freq_loss
-        if tc.isnan(gram_similarity_between_img_loss) != 1 and Use_Gram_Matrix_L1_Loss == True:
-            gram_similarity_between_img_loss_for_current_epoch = gram_similarity_between_img_loss
-        if network_model_type == 'Secondary branch is gradient map branch' and tc.isnan(gradient_grad_loss) != 1 and Use_Gradient_Map_L1_Loss == True:
-            gradient_grad_loss_for_current_epoch = gradient_grad_loss
-        if network_model_type == 'Secondary branch is k space branch' and tc.isnan(k_space_branch_k_space_loss) != 1:
-            k_space_branch_k_space_loss_for_current_epoch = k_space_branch_k_space_loss
-        if network_model_type == 'Secondary branch is wavelets high frequency components branch' and tc.isnan(wavelets_high_frequency_components_branch_high_frequency_loss) != 1:
-            wavelets_high_frequency_components_branch_high_frequency_loss_for_current_epoch = wavelets_high_frequency_components_branch_high_frequency_loss
-        """
 
     
     learning_rate = optimizer.param_groups[0]['lr']
     
     # If NOT using warm up, call the normal scheduler now
     if args['use_learning_rate_warm_up'] == False:
-#        print('learning rate for epoch %d is : %f' % (epoch, optimizer.param_groups[0]['lr']))
         scheduler.step()
-#        print('learning rate for next epoch is : %f' % (optimizer.param_groups[0]['lr']))
 
     batch_number_training = i+1 # Calculate for the current epoch, how many batches are used.
 
-    "Set evaluation Mode"    
     our_rcan_mri_sr_2d.eval()    
     with tc.no_grad():
         for i, data in enumerate(validationloader, 0):
@@ -3607,7 +2997,6 @@ for epoch in range(EPOCH_NUM):
             "vgg loss + pixel MSE loss + fft frequency loss, and we use weight_decay in Adam so that is L2 regularization"
             if Use_Feature_Map_Loss == True:
                 feature_map_loss_test.append((args_loss_weight['feature_map_weight']*loss_function_MSE(SR_test_features, HR_test_features)).item())
-#                print("feature_map_loss_test: ", feature_map_loss_test)
             
             if Use_Pixel_Wise_Loss == True:
                 if Use_Gradient_Map_Guided_Pixel_Wise_Loss == True:
@@ -3620,7 +3009,6 @@ for epoch in range(EPOCH_NUM):
                     pixel_wise_loss_test.append((args_loss_weight['pixel_wise_weight']*loss_function_L1(ssim_map_difference_weight_matrix*SR_img_test, ssim_map_difference_weight_matrix*labels)).item())
                 else:
                     pixel_wise_loss_test.append((args_loss_weight['pixel_wise_weight']*loss_function_L1(SR_img_test, labels)).item())
-#                print("pixel_wise_loss_test: ", pixel_wise_loss_test)
 
             if Use_kspace_loss == True:
                 if Amplify_High_Frequency_Value_In_K_Space_Loss == True:
@@ -3632,11 +3020,8 @@ for epoch in range(EPOCH_NUM):
                             create_2d_Gaussian_weights(window_size = HR_test_freq.shape[2], num_of_samples = HR_test_freq.shape[0], channel = HR_test_freq.shape[1]).to(device)*HR_test_freq[:,:,:,:,1]))).item())
                 else:
                     k_space_freq_loss_test.append((args_loss_weight['k_space_weight']*(loss_function_MSE(SR_test_freq[:,:,:,:,0], HR_test_freq[:,:,:,:,0])+loss_function_MSE(SR_test_freq[:,:,:,:,1], HR_test_freq[:,:,:,:,1]))).item())
-#                print("k_space_freq_loss_test: ", k_space_freq_loss_test)
 
 
-#            HR_ssim_test_weighted, HR_ssim_test = SSIM_function(labels,labels)
-#            SR_ssim_test_weighted, SR_ssim_test = SSIM_function(SR_img_test, labels)
             HR_ssim_test = SSIM_function(labels,labels)
             SR_ssim_test = SSIM_function(SR_img_test, labels)
             if tc.isnan(SR_ssim_test):
@@ -3644,12 +3029,10 @@ for epoch in range(EPOCH_NUM):
             if Use_SSIM_L1_Loss == True:
                 ssim_loss_test.append((args_loss_weight['ssim_weight']*loss_function_L1(SR_ssim_test.pow(args_loss_weight['ssim_component_weight']), HR_ssim_test.pow(args_loss_weight['ssim_component_weight']))).item())
             ssim_test.append(SR_ssim_test.item())   # Accumulation of SR_ssim in testing over all batches in one epoch, will be used to calculate the average value of SR SSIM for one epoch.
-#                print("ssim_loss_test: ", ssim_loss_test)
             psnr_test.append((calc_psnr_for_mri_image(SR_img_test, labels)).item())
 
             if Use_Gradient_Map_L1_Loss == True:
                 gradient_img_loss_test.append((args_loss_weight['gradient_img_weight']*loss_function_L1(calculate_gradient_map(args['out_colors'], SR_img_test), calculate_gradient_map(args['out_colors'], labels))).item())
-#                print('gradient_loss_test: ', gradient_map_loss_test)
 
             if Use_Gram_Matrix_L1_Loss == True:
                 gram_similarity_between_img_loss_test.append((args_loss_weight['gram_similarity_weight']*loss_function_L1(calculate_gram_matrix(SR_img_test), calculate_gram_matrix(labels))).item())
@@ -3694,17 +3077,13 @@ for epoch in range(EPOCH_NUM):
             loss_test = pixel_wise_loss_test 
         if Use_Feature_Map_Loss == True:
             loss_test = np.sum([loss_test, feature_map_loss_test],axis=0)
-#                print('loss_test: ', loss_test)
 
-#            if tc.isnan(k_space_freq_loss_test) != 1:
         if Use_kspace_loss == True:
             loss_test = np.sum([loss_test, k_space_freq_loss_test],axis=0)
 
-#            if tc.isnan(ssim_loss_test) != 1 and Use_SSIM_L1_Loss == True:
         if Use_SSIM_L1_Loss == True:
             loss_test = np.sum([loss_test, ssim_loss_test],axis=0)
 
-#            if tc.isnan(gradient_img_loss_test) != 1 and Use_Gradient_Map_L1_Loss == True:
         if Use_Gradient_Map_L1_Loss == True:
             loss_test = np.sum([loss_test, gradient_img_loss_test],axis=0)
 
@@ -3851,12 +3230,6 @@ for epoch in range(EPOCH_NUM):
         print("wavelets_high_frequency_components_branch_loss_training: ", wavelets_high_frequency_components_branch_high_frequency_loss_for_current_epoch)
 
 
-    "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"    
-#    if tc.isnan(loss) == 1: #- loss == 'NaN':
-#        break
-    "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-
-
     "Save the weights of network model when it achieves best average SR SSIM over all validation data samples in one epoch"
     
     print("*************************************")
@@ -3904,10 +3277,6 @@ for epoch in range(EPOCH_NUM):
     pickle.dump(last_model_wts, parameter_file)
     parameter_file.close()
 
-
-    
-#    f.write('Training Loss:')
-#    f.write('\n')
     f.write('Best SR SSIM for validation data has been achieved at epoch : %d' % (best_ssim_epoch))
     f.write('\n')
     f.write('Best SR PSNR for validation data has been achieved at epoch : %d' % (best_psnr_epoch))
@@ -3973,8 +3342,6 @@ for epoch in range(EPOCH_NUM):
     f.write(' \n')
 
 
-#    f.write('Validation Loss:')
-#    f.write('\n')
     f.write('Validation SSIM for epoch %d is : %f' % (epoch, ssim_test))
     f.write('\n')
     f.write('Validation PSNR for epoch %d is : %f' % (epoch, psnr_test))
@@ -4029,38 +3396,21 @@ for epoch in range(EPOCH_NUM):
     f.write('----------------------------------------------------------------------------------')
     f.write(' \n')
     f.write(' \n')
-    """
-    if (epoch == EPOCH_NUM - 1):
-        f.close()
-    """
+
     
 "Reload best weight parameters into the network model, which will be used for evaludation in the following part"
 if EPOCH_NUM>0:
     our_rcan_mri_sr_2d.load_state_dict(min_validation_loss_model_wts)
-training_end = time.perf_counter()
-running_time = training_end - training_start
-print('The training time in minute is: ', running_time/60) 
 print("training complete")
-f.write('Total training time is: %f' % (running_time))
 f.write('\n')
 
 
-prediction_time=[]
 if Perform_Evaluation:
     "Evaluation(Test)"
     with tc.no_grad():
         our_rcan_mri_sr_2d.eval()
         f.write('Test started: \n')
-    
-        """
-        The data loading pipeline for ordinary multi-channel SISR MRI SR or RGB SISR:
-        """
-        # =============================================================================
-        # h5py.version
-        # ===========================================================================
-        "The folder where to load the training LR, HR data pair"
 
-#    file_names_evaluation = os.listdir(folder_data_evaluation)
 
         for idx_file in file_names_evaluation:
             print(idx_file)
@@ -4077,33 +3427,12 @@ if Perform_Evaluation:
                 print('Testing data: Shape of LR data in Torch is: ', np.shape(torch_data_low_resolution))
                 torch_data_low_resolution_sequence = torch_data_low_resolution
                 print('Testing data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-                """
-                data_high_resolution_groundtruth = file_data['HRGT'][:] #----- numpy array
-                print('Testing data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
-                torch_data_high_resolution_groundtruth = tc.from_numpy(data_high_resolution_groundtruth) #----- torch type data could be read by tc.utils.data.TensorDataset
-                "Note the original .mat file has 2D image matrix by number_of_data_samples, which is H x W x N. After reading into h5py, the dimension changes as N x W x H. However in 2D MRI SR, so we have to permute axis to form the data on N x H x W"
-                torch_data_high_resolution_groundtruth = torch_data_high_resolution_groundtruth.permute(0, 1, 3, 2)
-                print('Testing data: Shape of HR data in Torch is: ', np.shape(torch_data_high_resolution_groundtruth))
-                torch_data_high_resolution_groundtruth_sequence = torch_data_high_resolution_groundtruth
-                print('Testing data: Shape of HR data sequence in Torch is: ', np.shape(torch_data_high_resolution_groundtruth_sequence))
-                """
 
 
                 torch_data_low_resolution_sequence = torch_data_low_resolution_sequence.float()
                 print(np.shape(torch_data_low_resolution_sequence))
-                """
-                torch_data_high_resolution_groundtruth_sequence = torch_data_high_resolution_groundtruth_sequence.float()
-                print(np.shape(torch_data_high_resolution_groundtruth_sequence))
-                """
 
-                """""""""""""""""""""""""""""""""""""""""""""
-                3.2.c. Load MRI HR and LR Evaluation(Test) Data pair evaluation(test) part
-                """""""""""""""""""""""""""""""""""""""""""""
                 torch_data_low_resolution_eval_sequence = torch_data_low_resolution_sequence.float()
-                """
-                torch_data_high_resolution_groundtruth_eval_sequence = torch_data_high_resolution_groundtruth_sequence.float()
-                testset = tc.utils.data.TensorDataset(torch_data_low_resolution_eval_sequence, torch_data_high_resolution_groundtruth_eval_sequence)
-                """
         
                 testset = tc.utils.data.TensorDataset(torch_data_low_resolution_eval_sequence)
                 testloader = tc.utils.data.DataLoader(
@@ -4113,20 +3442,11 @@ if Perform_Evaluation:
                                 num_workers = 0,
                                 pin_memory = False)
  
-    
-#                prediction_start = time.perf_counter()
-                tc.cuda.synchronize()
-                prediction_start = time.time()
                 "predict the SR MRI image by using testing LR image data and save them"
                 for i, testing_data_2 in enumerate(testloader, 0):
 
                     if args['use_HR_reference'] == False:
                         LR_images_test = testing_data_2[0]
-                        """
-                        LR_images_test, HR_images_test = testing_data_2
-                        HR_images_test = HR_images_test.type(tc.FloatTensor)
-                        """
-                
                         img_outputs, secondary_branch_outputs, network_model_type = our_rcan_mri_sr_2d(Variable(LR_images_test).type(tc.FloatTensor).to(device))
                 
                     elif args['use_HR_reference'] == True:
@@ -4160,19 +3480,9 @@ if Perform_Evaluation:
                             LR_eval_tensor = tc.cat((LR_eval_tensor, LR_images_tensor_test), 0)
                             HR_eval_tensor = tc.cat((HR_eval_tensor, HR_images_tensor_test), 0)
                             """
-                tc.cuda.synchronize()
-#                prediction_end = time.perf_counter()
-                prediction_end = time.time()
-                prediction_time.append(prediction_end - prediction_start)
-#                f.write('Prediction time for dataset %s is %f s \n' % (idx_file, prediction_time))
                 SR_images_test = SR_img_eval_tensor.cpu().numpy()
                 if secondary_branch_outputs != None:
                     SR_secondary_branch_test = SR_secondary_branch_eval_tensor.numpy()
-                    """
-                    LR_images_test = LR_eval_tensor.numpy()
-                    HR_images_test = HR_eval_tensor.numpy()
-                    """
-                    "save the .mat files for SR, HR and LR training images"
                 scipy.io.savemat(os.path.join(folder_log_path, 'test_results', os.path.splitext(idx_file)[0]+'_SR_test_image_ssim.mat'), mdict = {'SR_test_image' : SR_images_test})
                 if secondary_branch_outputs != None:
                     scipy.io.savemat(os.path.join(folder_log_path, 'test_results', os.path.splitext(idx_file)[0]+'_SR_secondary_branch_test.mat'), mdict = {'SR_secondary_branch_test' : SR_secondary_branch_test})
@@ -4182,16 +3492,6 @@ if Perform_Evaluation:
                     """
                 else:
                     print('other type NOT support for now')
-        f.write('Prediction time is %s \n' % (prediction_time))
-        f.write('Mean prediction time is %f \n' % (np.mean(prediction_time)))
-        print('Inference time:', np.mean(prediction_time))
 
 print("the predicting of generated SR image by using testing samples complete")
 f.close()
-
-"""
-now = time.perf_counter()
-
-running_time = now - since
-print('The time spent in minute is: ', running_time/60) 
-"""
