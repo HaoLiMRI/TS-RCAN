@@ -26,7 +26,6 @@ print('boolean value to see if GPU is ready:', tc.cuda.is_available())
 print('number of GPU is', tc.cuda.device_count())
 print(tc.cuda.get_device_name(0))
 use_cuda = True
-training_start = time.perf_counter()
 
 """""""""""""""""""""""""""""""""""""""""""""
 0. Configure all parameter
@@ -59,23 +58,20 @@ if Use_Feature_Map_Loss == True:
 # --------------------------- configuration of parameters for 2D_MRI_SR_Dual_Domain Reconstruct --------------------------- #
 
 "The folder where to load the LR, HR data pair"
-# folder_data_training = 'D:/Hao/SR_data/HCP_data/2x1_folds_3d_downsize_sag_128x1/training/'
-folder_data_training = 'D:/Hao/SR_data/IXI_data/PD_T2_128x1/training/'
+folder_data_training = 'training/'
 file_names_training = os.listdir(folder_data_training)
 
-# folder_data_validation = 'D:/Hao/SR_data/HCP_data/2x1_folds_3d_downsize_sag_128x1/validation/'
-folder_data_validation = 'D:/Hao/SR_data/IXI_data/PD_T2_128x1/validation/'
+folder_data_validation = 'validation/'
 file_names_validation = os.listdir(folder_data_validation)
 
-# folder_data_evaluation = 'D:/Hao/SR_data/HCP_data/2x1_folds_3d_downsize_sag_128x1/evaluation/'
-folder_data_evaluation = 'D:/Hao/SR_data/IXI_data/PD_T2_128x1/evaluation/'
+folder_data_evaluation = 'evaluation/'
 file_names_evaluation = os.listdir(folder_data_evaluation)
 
 "The folder for log and results"
-folder_log_path = 'D:/Hao/results/20211001_UNet_synthesis_T2_PD_128x1_seed1_cosine_105_IXI100/'
+folder_log_path = 'results/'
 
 "The folder of saved network parameters"
-folder_saved_network = 'D:/Hao/results/20210817_paralell_gMLP_MultiscaleExtractor_128x1_3d_downsize_seed1_cosine_101_HCP300/'
+folder_saved_network = 'results/'
 
 
 
@@ -86,17 +82,6 @@ args = {'n_colors': 1, 'n_feats': 64, 'scale': 2,
 args_loss_weight = {'feature_map_weight': 20, 'pixel_wise_weight': 100, 'k_space_weight': 10, 'ssim_weight': 50, \
                     'gradient_img_weight': 50, 'gradient_grd_weight': 10, 'k_space_branch_weight': 0.02, \
                     'wavelets_branch_weight': 5, 'ssim_component_weight': 2}
-
-
-
-
-
-# args['n_colors'] = 1, stands for number of channels of input image, e.g. 1 for MRI image, 3 for RGB image.
-# args['n_feats'] = 128, stands for how many "number of channels" for feature map going through model
-# args['scale'] = 2, stands for scale factor used in one upsampler, e.g. 2, 4
-# arg['optimizer'] = ['Adam'] # stand for which optimizer we want use for training, e.g. 'Adam', 'SGD_with_momentum', 'look_ahead'
-# arg['learning_rate_decay_method'] = ['cosine_learning_rate_decay'] # stand for which learning rate decay method we want use for training, e.g. 'cosine_learning_rate_decay', 'multi_step_learning_rate', 'step_learning_rate', 'cosine_learning_rate_warm_restarts'
-
 
 """
 The data loading pipeline for ordinary multi-channel SISR MRI SR or RGB SISR:
@@ -133,11 +118,7 @@ for idx_file in file_names_training:
             print(num_low_resolution_mat_file)
             torch_data_low_resolution_sequence = tc.cat((torch_data_low_resolution_sequence, torch_data_low_resolution), 0)
         print('Training data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-#        elif 'HRGT_training' in os.path.join(folder_data_training, idx_file):
-#            print('One more high resolution groundtruth image set exist')
         num_high_resolution_groundtruth_mat_file = num_high_resolution_groundtruth_mat_file + 1
-#            print(os.path.join(folder_data_training, idx_file))
-#            file_data_high_resolution_groundtruth = h5py.File(os.path.join(folder_data_training, idx_file), 'r')
         data_high_resolution_groundtruth = file_data['LR'][:] #----- numpy array
         print('Training data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
         torch_data_high_resolution_groundtruth = tc.from_numpy(data_high_resolution_groundtruth) #----- torch type data could be read by tc.utils.data.TensorDataset
@@ -159,7 +140,6 @@ torch_data_low_resolution_sequence = torch_data_low_resolution_sequence.float()
 print(np.shape(torch_data_low_resolution_sequence))
 torch_data_high_resolution_groundtruth_sequence = torch_data_high_resolution_groundtruth_sequence.float()
 print(np.shape(torch_data_high_resolution_groundtruth_sequence))
-# num_training_samples = math.floor(torch_data_low_resolution_sequence.size(0))
 print('All mat files have been concatenated into one tensor for each type, data is ready to be loaded!')
 
 """""""""""""""""""""""""""""""""""""""""""""
@@ -176,14 +156,6 @@ trainloader = tc.utils.data.DataLoader(
                     num_workers = 0,
                     pin_memory = False,
                     drop_last = True)
-
-    #testset = tc.utils.data.TensorDataset(torch_data_low_resolution_test_sequence, torch_data_high_resolution_groundtruth_test_sequence)
-
-    #testloader = tc.utils.data.DataLoader(
-    #                    testset, 
-    #                    batch_size = batch_size,
-    #                    shuffle = True, 
-    #                    num_workers = 0)
 
 """""""""""""""""""""""""""""""""""""""""""""
 2.1.c. MRI HR and LR Validation Data pair preprocessing validation part
@@ -212,11 +184,7 @@ for idx_file in file_names_validation:
             print(num_low_resolution_mat_file)
             torch_data_low_resolution_sequence = tc.cat((torch_data_low_resolution_sequence, torch_data_low_resolution), 0)
         print('Evaluation data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-#        elif 'HRGT_validation' in os.path.join(folder_data_validation, idx_file):
-#            print('One more high resolution groundtruth image set exist')
         num_high_resolution_groundtruth_mat_file = num_high_resolution_groundtruth_mat_file + 1
-#            print(os.path.join(folder_data_validation, idx_file))
-#            file_data_high_resolution_groundtruth = h5py.File(os.path.join(folder_data_validation, idx_file), 'r')
         data_high_resolution_groundtruth = file_data['LR'][:] #----- numpy array
         print('Evaluation data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
         torch_data_high_resolution_groundtruth = tc.from_numpy(data_high_resolution_groundtruth) #----- torch type data could be read by tc.utils.data.TensorDataset
@@ -245,7 +213,6 @@ print('All mat files have been concatenated into one tensor for each type, data 
 """""""""""""""""""""""""""""""""""""""""""""
 torch_data_low_resolution_validation_sequence = torch_data_low_resolution_sequence.float()
 torch_data_high_resolution_groundtruth_validation_sequence = torch_data_high_resolution_groundtruth_sequence.float()
-# tc.multiprocessing.freeze_support()
 validationset = tc.utils.data.TensorDataset(torch_data_low_resolution_validation_sequence, torch_data_high_resolution_groundtruth_validation_sequence)
 
 validationloader = tc.utils.data.DataLoader(
@@ -268,11 +235,7 @@ def gaussian(window_size, sigma):
     return gauss/gauss.sum()
 
 def create_2d_Gaussian_weights(window_size, num_of_samples, channel):
-    '''
-    Create a grid of weights which follow 2D Gaussian distribution(the weights at center area of grid are higher and weights at rest area of grid
-    are lower). This function generates the weights which could emphasize the high frequency components(e.g. edge in the image) in the k space loss
-    cause high frequency compoenents in k space are centrolized in the center area of k space data. 
-    '''
+    
     weights_in_1D_window = gaussian(window_size = window_size, sigma = 32).unsqueeze(1) # window_size is "how many weights we expect to generate over a Gaussian pdf
     weights_in_2D_window = weights_in_1D_window.mm(weights_in_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
     weights_in_2D_window_pytorch = Variable(weights_in_2D_window.expand(num_of_samples, channel, window_size, window_size).contiguous())
@@ -329,10 +292,8 @@ def calculate_gradient_map(n_colors, img):
         raise SystemExit('Error: Dimension of gradient operator is not correct!')
 
     
-#    gradient_map = tc.cat((gradient_vertical_map, gradient_horizontal_map),1)
 
     if Amplify_Small_Value_In_Gradient_Map == True:
-#        gradient_map = (1 - tc.exp(-2.5 * abs(gradient_map)))*(gradient_map/abs(gradient_map)) # 1 - exp(-ax), a = 2.5
         gradient_map = 1 - tc.exp(-2.5 * gradient_map)
 
     return gradient_map
@@ -348,13 +309,6 @@ def calc_psnr_for_mri_image(img1, img2):
     mse = tc.pow(diff, 2).mean(2).mean(2)
     return -10 * tc.log10(mse).mean(0).mean(0)
 
-
-"""
-(Not used yet in this code)
-L1 Charbonnier Loss. See more information regarding L1 Charboniier Loss from paper: 2018.Fast and Accurate Image Super-Resolution with 
-Deep Laplacian Pyramid Networks. L1 Charboniier Loss in theory can be used to replace the (smooth) L1 loss, to provide reconstructed 
-image with less over-smoothing issues and problem.
-"""
 class L1_Charbonnier_Loss(tc.nn.Module):
     def __init__(self):
         super(L1_Charbonnier_Loss,self).__init__()
@@ -366,12 +320,6 @@ class L1_Charbonnier_Loss(tc.nn.Module):
         loss = tc.mean(error)
         return loss
     
-
-"""
-Gradient Map Guided Weight For Pixel Wise Loss.
-SR和HR分别求gradient map，再相减得到一个gradient map差的矩阵，再把这个gradient map差的矩阵从(H * W)变为(1 * HW)，然后再过一个softmax，再变回H * W，
-然后把得到的矩阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-"""
 class GradientMapGuidedWeightForPixelWiseLoss(nn.Module):
     def __init__(self):
         super(GradientMapGuidedWeightForPixelWiseLoss, self).__init__()
@@ -385,11 +333,6 @@ class GradientMapGuidedWeightForPixelWiseLoss(nn.Module):
         gradient_map_difference_weight_matrix = gradient_map_difference_weight_matrix.reshape(N, C, H, W)
         return gradient_map_difference_weight_matrix
 
-
-"""
-SSIM Map Guided Weight For Pixel Wise Loss.
-SR和HR求SSIM map，再用1减这个SSIM map得到一个矩阵当做pixel-wise L1 loss的weight来元素乘在L1 loss的pixel上。
-"""
 class SSIMMapGuidedWeightForPixelWiseLoss(nn.Module):
     def __init__(self):
         super(SSIMMapGuidedWeightForPixelWiseLoss, self).__init__()
@@ -426,17 +369,6 @@ class FFT_K_SPACE(nn.Module):
         # Beware the shape of input for irfft in our case should be (N, C, H, W)
         k_space_result = tc.fft.fftn(x, dim = (-3,-2,-1))
         return k_space_result
-""" class FFT_K_SPACE(nn.Module):
-    def __init__(self):
-        super(FFT_K_SPACE, self).__init__()
-    def forward(self, x):
-        x = tc.unsqueeze(x, -1) #----- create the additional last dimension for input matrix with (N, C, H, W)
-        x_complex = tc.cat((x, tc.zeros_like(x)), -1)
-        k_space_result = tc.fft(x_complex, 2)
-        # print(k_space_result.size())
-#        out = tc.sqrt(tc.mul(k_space_result[:, :, :, :, 0], k_space_result[:, :, :, :, 0]) + tc.mul(k_space_result[:, :, :, :, 1], k_space_result[:, :, :, :, 1]))
-#        return out
-        return k_space_result """
 
 class IFFT_TIME_DOMAIN(nn.Module):
     def __init__(self):
@@ -471,21 +403,11 @@ class LearningRateWarmUP(object):
             self.after_scheduler.step(cur_iteration-self.warmup_iteration)
 
 
-
-
-
 """
 Definition of 2D UNet
 """
 "Upsampler Module, implemented by employeed of sub-pixel conv"
 class Upsampler(nn.Sequential):
-    """
-    Upsampling/Upscale module, used as last part of "SR reconstruction network model" if the network model employ the "post-upsampling mode".
-    Beware the actual upsampling approach is "sub-pixel conv" (which is nn.PixelShuffle() in Pytorch) which was proposed in
-    paper: "2016. Real-Time single image and video super-resolution using an efficient sub-pixel convolutional neural network".
-    Such sub-pixel conv actually constructs F ∗ S^2 feature maps of dimensions H ×W are reshaped into F feature maps of dimensions H ∗ S × W ∗ S, 
-    where S is the upsampling factor.
-    """
     def __init__(self, in_feats, out_feats, reduce_number_of_channels_in_half = False):
         super(Upsampler, self).__init__()
         self.upsampler = nn.Sequential(*[
@@ -521,13 +443,6 @@ class Upsampler(nn.Sequential):
 
 "Downsampler Module, implemented by employeed of sub-pixel conv"
 class Downsampler(nn.Sequential):
-    """
-    Upsampling/Upscale module, used as last part of "SR reconstruction network model" if the network model employ the "post-upsampling mode".
-    Beware the actual upsampling approach is "sub-pixel conv" (which is nn.PixelShuffle() in Pytorch) which was proposed in
-    paper: "2016. Real-Time single image and video super-resolution using an efficient sub-pixel convolutional neural network".
-    Such sub-pixel conv actually constructs F ∗ S^2 feature maps of dimensions H ×W are reshaped into F feature maps of dimensions H ∗ S × W ∗ S, 
-    where S is the upsampling factor.
-    """
     def __init__(self, in_feats, out_feats):
         super(Downsampler, self).__init__()
         self.layers = nn.Sequential(*[
@@ -538,7 +453,6 @@ class Downsampler(nn.Sequential):
             ])
         self.downsampler = nn.Sequential(*[nn.Conv2d(out_feats, out_feats, kernel_size = 2, padding=0, stride=2, bias=False),
                 nn.ReLU(inplace=True),
-#                nn.MaxPool2d(2,2,0)
             ])
 
     def forward(self, x):
@@ -575,31 +489,21 @@ class UNet_2D(nn.Module):
 
     def forward(self, x):
         x, x1 = self.downsampler_1(x)
-#        print('d1,', 'x:', x.size(), ';x1:', x1.size())
         x, x2 = self.downsampler_2(x)
-#        print('d2,', 'x:', x.size(), ';x2:', x2.size())
         x, x3 = self.downsampler_3(x)
-#        print('d3,', 'x:', x.size(), ';x3:', x3.size())
         x, x4 = self.downsampler_4(x)
-#        print('d4,', 'x:', x.size(), ';x4:', x4.size())
         
         x = self.mid_layers(x)
-#        print('m,', 'x:', x.size())
         
         x = self.upsampler_1(x, x4)
-#        print('u1,', 'x:', x.size())
         x = self.upsampler_2(x, x3)
-#        print('u2,', 'x:', x.size())
         x = self.upsampler_3(x, x2)
-#        print('u3,', 'x:', x.size())
         x = self.upsampler_4(x, x1)
-#        print('u4,', 'x:', x.size())
         
         if Maintain_in_plane_Size == False:
             x = self.upsampler_5(x)
         
         x = self.tail(x)
-#        print('t,', 'x:', x.size())
         
         return x
     
@@ -608,8 +512,6 @@ device=tc.device("cuda" if use_cuda else "cpu")
 
 if Freeze_random_seed == True:
     tc.manual_seed(args['seed'])
-#    tc.backend.cudnn.deterministic = True
-#    tc.backend.cudnn.benchmark = False
     print('Seed is frozen!')
  
     
@@ -624,7 +526,6 @@ if Use_saved_model == True:
     print("Saved model loaded")
     
 # Weight initialization using He initialization.
-""" for m in our_rcan_mri_sr_2d.modules():
     if isinstance(m, (nn.Conv2d, nn.Linear)):
         nn.init.kaiming_normal_(m.weight, mode='fan_in') """
 
@@ -682,22 +583,11 @@ loss_function_L1 = nn.L1Loss().to(device)       #----- L1 loss
 
 loss_function_Charbonnier = L1_Charbonnier_Loss().to(device)        #----- L1 Charbonnier loss
 
-# loss_function_CE = nn.CrossEntropyLoss().to(device)
-
 if Use_ssim_map == True:
     SSIM_function = pytorch_ssim_map.SSIM().to(device)       #----- ssim map calculation
 else:
     SSIM_function = pytorch_ssim_l1_org.SSIM().to(device)       #----- ssim calculation
 
-
-# =============================================================================
-# print('The loss function is L1Loss')
-# loss_function = nn.L1Loss(size_average = False).to(device) 
-# =============================================================================
-# =============================================================================
-# print('The loss function is CrossEntropyLoss')
-# loss_function = nn.CrossEntropyLoss().to(device)        #----- here use cross entropy loss
-# =============================================================================
 
 
 """""""""""""""""""""""""""
@@ -756,7 +646,6 @@ for epoch in range(EPOCH_NUM):
     
     "Save the training loss for each epoch"
     if (epoch == 0):
-#        f = open(os.path.join(folder_log_path, 'log.txt'), 'w')
         f.write('Code Version: 1.0.1\n')
         f.write('The configuration of parameters:\n')
         f.write('batch_size is: %d\n' % batch_size)
@@ -784,51 +673,20 @@ for epoch in range(EPOCH_NUM):
     optimizer.zero_grad()
     
     for i, data in enumerate(trainloader, 0):
-# =============================================================================
-#         print('This is the ', i, ' batch for the ', epoch, ' epoch' )
-# =============================================================================
-        # We call tc.cuda.empty_cache() if we use deformable_conv, due that deformable_conv will use huge amount of memory so we need to
-        # call tc.cuda.empty_cache() trying to empty the unused GPU cache(although it may be useless also and it is still out of GPU memory
-        # when applying deformable_conv).
-
-        """
-        每一次调用loss.backward()函数之前都要用optimizer.zero_grad()将梯度清零。因为如果梯度不清零，pytorch中会将上次计算的梯度和本次计算
-        的梯度累加。
-        PyTorch这种自动累加之前计算的梯度和本次计算梯度的机制逻辑的好处是，当我们的硬件限制不能使用更大的bachsize时，使用多次计算较小的
-        bachsize的梯度平均值来代替，更方便，坏处当然是正常计算时我们只需要本次计算的梯度于是每次都要清零梯度。
-        """
-        "clear all stored gradients if there exist"
-#        optimizer.zero_grad()
-        # print('The optimizer has been cleared' )
-
-        """
-        if args['conv_layer_type'] == 'deformable_conv':
-            tc.cuda.empty_cache()
-        """
         
         "load input data"
         inputs, labels = data
         inputs, labels = Variable(inputs).to(device), Variable(labels).to(device)
-        # print('The data have been loaded' )
 
         "forward prop"
-        # outputs = our_resnext(inputs).double() #-- numpy arrays are 64-bit floating point and will be converted to torch.DoubleTensor standardly. Now, if you use them with your model, you'll need to make sure that your model parameters are also Double
         img_outputs = our_model_mri_sr_2d(inputs) #-- or using default float as type, however remember to cast the input from Double to Float            
-        # print(outputs.size())
-        # print('the forward pass has been went')
         
         if Use_Feature_Map_Loss == True:
             SR_img_copies = tc.cat((img_outputs, img_outputs, img_outputs), 1)
-            # print(SR_copies.size())
             SR_features = feature_extractor(SR_img_copies)
-            # print(SR_features.size())
-            # print(SR_features.dtype)
 
             HR_copies = tc.cat((labels, labels, labels), 1)
-            # print(HR_copies.size())
             HR_features = feature_extractor(HR_copies)
-            # print(HR_features.size())
-            # print(HR_features.dtype)
         
         if Use_kspace_loss == True:
             SR_freq = fft_k_space(img_outputs)
@@ -836,12 +694,9 @@ for epoch in range(EPOCH_NUM):
             HR_freq = fft_k_space(labels)
 
         "calculate the gradients for all Variables during back prop"
-        "vgg loss + pixel MSE loss + fft frequency loss, and we use weight_decay in Adam so that is L2 regularization"
         if Use_Feature_Map_Loss == True:
             feature_map_loss = args_loss_weight['feature_map_weight']*loss_function_MSE(SR_features, HR_features)
             feature_map_loss_training.append(feature_map_loss.item())    # Only save the value of feature_map_loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage
-        # feature_map_loss = 0.000000001*loss_function_CE(SR_features, HR_features)
-#           print("feature_map_loss: ", feature_map_loss)
         if Use_Gradient_Map_Guided_Pixel_Wise_Loss == True:
             gradient_map_guided_weight_for_pixel_wise_loss = GradientMapGuidedWeightForPixelWiseLoss()
             gradient_map_difference_weight_matrix = gradient_map_guided_weight_for_pixel_wise_loss(img_outputs, labels)
@@ -853,7 +708,6 @@ for epoch in range(EPOCH_NUM):
         else:
             pixel_wise_loss = args_loss_weight['pixel_wise_weight']*loss_function_L1(img_outputs, labels)
         pixel_wise_loss_training.append(pixel_wise_loss.item())    # Only save the value of pixel_wise_loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage 
-#            print("pixel_wise_loss: ", pixel_wise_loss)
         if Use_kspace_loss == True:
             if Amplify_High_Frequency_Value_In_K_Space_Loss == True:
                 k_space_freq_loss = args_loss_weight['k_space_weight']*(loss_function_MSE(
@@ -865,12 +719,7 @@ for epoch in range(EPOCH_NUM):
             else:
                 k_space_freq_loss = args_loss_weight['k_space_weight']*(loss_function_MSE(SR_freq.real, HR_freq.real) + loss_function_MSE(SR_freq.imag, HR_freq.imag))
             k_space_freq_loss_training.append(k_space_freq_loss.item())
-#            print(loss_function_MSE(SR_freq[:,:,:,:,0], HR_freq[:,:,:,:,0]))
-#            print(loss_function_MSE(SR_freq[:,:,:,:,1], HR_freq[:,:,:,:,1]))
-#            print("k_space_freq_loss: ", k_space_freq_loss.item())
 
-#        HR_ssim_weighted, HR_ssim = SSIM_function(labels, labels)
-#        SR_ssim_weighted, SR_ssim = SSIM_function(img_outputs, labels)
         HR_ssim = SSIM_function(labels, labels)
         SR_ssim = SSIM_function(img_outputs, labels)
 
@@ -889,19 +738,13 @@ for epoch in range(EPOCH_NUM):
             batch_with_nan.append(i)
             continue
 
-#            print('gradient_loss: ', gradient_map_loss)
 
-#            loss = pixel_wise_loss + ssim_loss
         loss = pixel_wise_loss
         
         if Use_Feature_Map_Loss == True:
             loss = loss + feature_map_loss
 
-#            if ssim_loss < 0.5:
-#                loss = ssim_loss + feature_map_loss + pixel_wise_loss
-#                print('ssim_loss')
-#            else:
-#                loss = pixel_wise_loss + feature_map_loss
+
         if Use_kspace_loss == True:
             if tc.isnan(k_space_freq_loss) != 1:
                 loss = loss + k_space_freq_loss
@@ -916,16 +759,6 @@ for epoch in range(EPOCH_NUM):
 
 
 
-#            print('loss: ', loss)
-#            loss = feature_map_loss + pixel_wise_loss + k_space_freq_loss
-            # print('the loss has been checked')
-
-
-            "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-#            if tc.isnan(loss) == 1: #- loss == 'NaN':
-#                break
-            "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-
         loss_training.append(loss.item())  # Only save the value of loss(rather than saving the entire graph), otherwise the GPU memory may not be enough for usage    
         loss = loss / accumulation_steps
         "back prop"
@@ -936,7 +769,6 @@ for epoch in range(EPOCH_NUM):
             optimizer.step()                            
             optimizer.zero_grad()
 #        "update all Variables by using newly fetched gradients"
-#        optimizer.step() 
         """print('learning rate: %f' % (optimizer.param_groups[0]['lr']))"""
         # print('the all Variables have been updated')
 
@@ -950,31 +782,13 @@ for epoch in range(EPOCH_NUM):
                 print('[%d, %5d] loss: %.3f' \
                       % (epoch, i, running_loss / print_loss_per_batch))
             running_loss = 0.0
-        """
-        training_loss_for_current_epoch = loss_training / 50
-        feature_map_loss_for_current_epoch = feature_map_loss
-        pixel_wise_loss_for_current_epoch = pixel_wise_loss
-        ssim_loss_for_current_epoch = ssim_loss
-        gradient_img_loss_for_current_epoch = gradient_img_loss
-        k_space_freq_loss_for_current_epoch = k_space_freq_loss
-        if tc.isnan(gram_similarity_between_img_loss) != 1 and Use_Gram_Matrix_L1_Loss == True:
-            gram_similarity_between_img_loss_for_current_epoch = gram_similarity_between_img_loss
-        if network_model_type == 'Secondary branch is gradient map branch' and tc.isnan(gradient_grad_loss) != 1 and Use_Gradient_Map_L1_Loss == True:
-            gradient_grad_loss_for_current_epoch = gradient_grad_loss
-        if network_model_type == 'Secondary branch is k space branch' and tc.isnan(k_space_branch_k_space_loss) != 1:
-            k_space_branch_k_space_loss_for_current_epoch = k_space_branch_k_space_loss
-        if network_model_type == 'Secondary branch is wavelets high frequency components branch' and tc.isnan(wavelets_high_frequency_components_branch_high_frequency_loss) != 1:
-            wavelets_high_frequency_components_branch_high_frequency_loss_for_current_epoch = wavelets_high_frequency_components_branch_high_frequency_loss
-        """
 
     
     learning_rate = optimizer.param_groups[0]['lr']
     
     # If NOT using warm up, call the normal scheduler now
     if args['use_learning_rate_warm_up'] == False:
-#        print('learning rate for epoch %d is : %f' % (epoch, optimizer.param_groups[0]['lr']))
         scheduler.step()
-#        print('learning rate for next epoch is : %f' % (optimizer.param_groups[0]['lr']))
 
     batch_number_training = i+1 # Calculate for the current epoch, how many batches are used.
 
@@ -1011,7 +825,6 @@ for epoch in range(EPOCH_NUM):
             "vgg loss + pixel MSE loss + fft frequency loss, and we use weight_decay in Adam so that is L2 regularization"
             if Use_Feature_Map_Loss == True:
                 feature_map_loss_test.append((args_loss_weight['feature_map_weight']*loss_function_MSE(SR_test_features, HR_test_features)).item())
-#                print("feature_map_loss_test: ", feature_map_loss_test)
 
             if Use_Gradient_Map_Guided_Pixel_Wise_Loss == True:
                 gradient_map_guided_weight_for_pixel_wise_loss = GradientMapGuidedWeightForPixelWiseLoss()
@@ -1023,7 +836,6 @@ for epoch in range(EPOCH_NUM):
                 pixel_wise_loss_test.append((args_loss_weight['pixel_wise_weight']*loss_function_L1(ssim_map_difference_weight_matrix*SR_img_test, ssim_map_difference_weight_matrix*labels)).item())
             else:
                 pixel_wise_loss_test.append((args_loss_weight['pixel_wise_weight']*loss_function_L1(SR_img_test, labels)).item())
-#                print("pixel_wise_loss_test: ", pixel_wise_loss_test)
 
             if Use_kspace_loss == True:
                 if Amplify_High_Frequency_Value_In_K_Space_Loss == True:
@@ -1035,11 +847,8 @@ for epoch in range(EPOCH_NUM):
                             create_2d_Gaussian_weights(window_size = HR_test_freq.shape[2], num_of_samples = HR_test_freq.shape[0], channel = HR_test_freq.shape[1]).to(device)*HR_test_freq.imag))).item())
                 else:
                     k_space_freq_loss_test.append((args_loss_weight['k_space_weight']*(loss_function_MSE(SR_test_freq.real, HR_test_freq.real)+loss_function_MSE(SR_test_freq.imag, HR_test_freq.imag))).item())
-#                print("k_space_freq_loss_test: ", k_space_freq_loss_test)
 
 
-#            HR_ssim_test_weighted, HR_ssim_test = SSIM_function(labels,labels)
-#            SR_ssim_test_weighted, SR_ssim_test = SSIM_function(SR_img_test, labels)
             HR_ssim_test = SSIM_function(labels,labels)
             SR_ssim_test = SSIM_function(SR_img_test, labels)
             if tc.isnan(SR_ssim_test):
@@ -1047,24 +856,19 @@ for epoch in range(EPOCH_NUM):
             if Use_SSIM_L1_Loss == True:
                 ssim_loss_test.append((args_loss_weight['ssim_weight']*loss_function_L1(SR_ssim_test.pow(args_loss_weight['ssim_component_weight']), HR_ssim_test.pow(args_loss_weight['ssim_component_weight']))).item())
             ssim_test.append(SR_ssim_test.item())   # Accumulation of SR_ssim in testing over all batches in one epoch, will be used to calculate the average value of SR SSIM for one epoch.
-#                print("ssim_loss_test: ", ssim_loss_test)
             psnr_test.append((calc_psnr_for_mri_image(SR_img_test, labels)).item())
 
 
         loss_test = pixel_wise_loss_test 
         if Use_Feature_Map_Loss == True:
             loss_test = np.sum([loss_test, feature_map_loss_test],axis=0)
-#                print('loss_test: ', loss_test)
 
-#            if tc.isnan(k_space_freq_loss_test) != 1:
         if Use_kspace_loss == True:
             loss_test = np.sum([loss_test, k_space_freq_loss_test],axis=0)
 
-#            if tc.isnan(ssim_loss_test) != 1 and Use_SSIM_L1_Loss == True:
         if Use_SSIM_L1_Loss == True:
             loss_test = np.sum([loss_test, ssim_loss_test],axis=0)
 
-#            if tc.isnan(gradient_img_loss_test) != 1 and Use_Gradient_Map_L1_Loss == True:
         if Use_Gradient_Map_L1_Loss == True:
             loss_test = np.sum([loss_test, gradient_img_loss_test],axis=0)
 
@@ -1114,13 +918,6 @@ for epoch in range(EPOCH_NUM):
         k_space_freq_loss_for_current_epoch = np.mean(k_space_freq_loss_training)
         print("k_space_freq_loss_training: ", k_space_freq_loss_for_current_epoch)
 
-
-    "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"    
-#    if tc.isnan(loss) == 1: #- loss == 'NaN':
-#        break
-    "added code to prevent 'NaN' in loss, just a work around but not final/correct solution"
-
-
     "Save the weights of network model when it achieves best average SR SSIM over all validation data samples in one epoch"
     print("*************************************")
     print("best_ssim:", best_ssim)
@@ -1160,10 +957,6 @@ for epoch in range(EPOCH_NUM):
     pickle.dump(last_model_wts, parameter_file)
     parameter_file.close()
 
-
-    
-#    f.write('Training Loss:')
-#    f.write('\n')
     f.write('Best SR SSIM for validation data has been achieved at epoch : %d' % (best_ssim_epoch))
     f.write('\n')
     f.write('Best SR PSNR for validation data has been achieved at epoch : %d' % (best_psnr_epoch))
@@ -1197,9 +990,6 @@ for epoch in range(EPOCH_NUM):
     f.write('\n')
     f.write(' \n')
 
-
-#    f.write('Validation Loss:')
-#    f.write('\n')
     f.write('Validation SSIM for epoch %d is : %f' % (epoch, ssim_test))
     f.write('\n')
     f.write('Validation PSNR for epoch %d is : %f' % (epoch, psnr_test))
@@ -1223,21 +1013,11 @@ for epoch in range(EPOCH_NUM):
     f.write('----------------------------------------------------------------------------------')
     f.write(' \n')
     f.write(' \n')
-    """
-    if (epoch == EPOCH_NUM - 1):
-        f.close()
-    """
     
 "Reload best weight parameters into the network model, which will be used for evaludation in the following part"
 our_model_mri_sr_2d.load_state_dict(min_validation_loss_model_wts)
-training_end = time.perf_counter()
-running_time = training_end - training_start
-print('The training time in minute is: ', running_time/60) 
 print("training complete")
-f.write('Total training time is: %f' % (running_time))
 f.write('\n')
-
-
 
 if Perform_Evaluation:
     "Evaluation(Test)"
@@ -1245,15 +1025,6 @@ if Perform_Evaluation:
         our_model_mri_sr_2d.eval()
         f.write('Test started: \n')
     
-        """
-        The data loading pipeline for ordinary multi-channel SISR MRI SR or RGB SISR:
-        """
-        # =============================================================================
-        # h5py.version
-        # ===========================================================================
-        "The folder where to load the training LR, HR data pair"
-
-#    file_names_evaluation = os.listdir(folder_data_evaluation)
 
         for idx_file in file_names_evaluation:
             print(idx_file)
@@ -1270,31 +1041,13 @@ if Perform_Evaluation:
                 print('Testing data: Shape of LR data in Torch is: ', np.shape(torch_data_low_resolution))
                 torch_data_low_resolution_sequence = torch_data_low_resolution
                 print('Testing data: Shape of LR data sequence in Torch is: ', np.shape(torch_data_low_resolution_sequence))
-                """
-                data_high_resolution_groundtruth = file_data['HRGT'][:] #----- numpy array
-                print('Testing data: Shape of HR data is: ', np.shape(data_high_resolution_groundtruth))
-                torch_data_high_resolution_groundtruth = tc.from_numpy(data_high_resolution_groundtruth) #----- torch type data could be read by tc.utils.data.TensorDataset
-                "Note the original .mat file has 2D image matrix by number_of_data_samples, which is H x W x N. After reading into h5py, the dimension changes as N x W x H. However in 2D MRI SR, so we have to permute axis to form the data on N x H x W"
-                torch_data_high_resolution_groundtruth = torch_data_high_resolution_groundtruth.permute(0, 1, 3, 2)
-                print('Testing data: Shape of HR data in Torch is: ', np.shape(torch_data_high_resolution_groundtruth))
-                torch_data_high_resolution_groundtruth_sequence = torch_data_high_resolution_groundtruth
-                print('Testing data: Shape of HR data sequence in Torch is: ', np.shape(torch_data_high_resolution_groundtruth_sequence))
-                """
                 torch_data_low_resolution_sequence = torch_data_low_resolution_sequence.float() 
                 print(np.shape(torch_data_low_resolution_sequence))
-                """
-                torch_data_high_resolution_groundtruth_sequence = torch_data_high_resolution_groundtruth_sequence.float()
-                print(np.shape(torch_data_high_resolution_groundtruth_sequence))
-                """
 
                 """""""""""""""""""""""""""""""""""""""""""""
                 3.2.c. Load MRI HR and LR Evaluation(Test) Data pair evaluation(test) part
                 """""""""""""""""""""""""""""""""""""""""""""
                 torch_data_low_resolution_eval_sequence = torch_data_low_resolution_sequence.float()
-                """
-                torch_data_high_resolution_groundtruth_eval_sequence = torch_data_high_resolution_groundtruth_sequence.float()
-                testset = tc.utils.data.TensorDataset(torch_data_low_resolution_eval_sequence, torch_data_high_resolution_groundtruth_eval_sequence)
-                """
                 testset = tc.utils.data.TensorDataset(torch_data_low_resolution_eval_sequence)
                     
                 testloader = tc.utils.data.DataLoader(
@@ -1305,7 +1058,6 @@ if Perform_Evaluation:
                                 pin_memory = False)
  
     
-                prediction_start = time.perf_counter()
                 "predict the SR MRI image by using testing LR image data and save them"
                 for i, testing_data_2 in enumerate(testloader, 0):
 
@@ -1321,9 +1073,6 @@ if Perform_Evaluation:
                     else:
                         SR_img_eval_tensor = tc.cat((SR_img_eval_tensor, SR_images_tensor_test), 0)
                         
-                prediction_end = time.perf_counter()
-                prediction_time = prediction_end - prediction_start
-                f.write('Prediction time for dataset %s is %f s \n' % (idx_file, prediction_time))
                 SR_images_test = SR_img_eval_tensor.numpy()
 
                 scipy.io.savemat(os.path.join(folder_log_path, 'test_results', os.path.splitext(idx_file)[0]+'_SR_test_image_ssim.mat'), mdict = {'SR_test_image' : SR_images_test})
