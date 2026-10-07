@@ -7,7 +7,6 @@ from math import exp
 import numpy as np
 import h5py
 import os
-import time
 import scipy.io
 import copy
 import pickle
@@ -17,10 +16,6 @@ import pytorch_ssim_map
 from optimizer import lookahead
 
 "-------------------------------------------------------------------------------------------------"
-Single_GPU_training = True
-
-if Single_GPU_training == True:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 print('boolean value to see if GPU is ready:', tc.cuda.is_available())
 print('number of GPU is', tc.cuda.device_count())
